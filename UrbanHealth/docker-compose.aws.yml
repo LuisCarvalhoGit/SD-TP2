@@ -1,0 +1,30 @@
+networks:
+  urban-cloud-net:
+    driver: bridge
+
+services:
+  python-analysis:
+    build:
+      context: ./Services/Analysis
+    container_name: aws-python-analysis
+    restart: always
+    networks:
+      - urban-cloud-net
+
+  csharp-server:
+    build:
+      context: .
+      dockerfile: Server/Dockerfile
+    container_name: aws-csharp-server
+    restart: always
+    ports:
+      - "5001:5001" # Exposto para os Gateways físicos se ligarem via TCP
+      - "80:8081"   # Exposto na porta padrão HTTP para o Dashboard Web
+    volumes:
+      - ./prod_database_data:/app/data
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Production
+      - DB_PATH=/app/data/urbanhealth_central.db
+      - ANALYSIS_RPC_URL=http://python-analysis:50052
+    networks:
+      - urban-cloud-net

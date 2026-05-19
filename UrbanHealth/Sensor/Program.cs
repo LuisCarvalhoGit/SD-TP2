@@ -1,421 +1,192 @@
 ﻿using System;
 using System.IO;
-using System.Net.Sockets;
-using System.Security.Principal;
+using System.Text;
+using System.Text.Json;
 using System.Threading.Tasks;
-using Shared;
+using RabbitMQ.Client;
 
 class Program {
-
-    private static TcpClient _gatewayClient;
-    private static int GatewayPort = 5000;
-    private static string GatewayIP = "127.0.0.1";
     private static string SID = "S101";
 
     // State management
-    private static bool _isAuthenticated = false;
-    private static string _zone = "Unknown";
-
     private static bool _isStreaming = false;
-    private static string _requestedStreamAction = ""; // stores last (START or STOP)
-
     private static DateTime _lastAlertTime = DateTime.MinValue;
-
     private static string[] _supportedTypes = { "TEMP", "HUM", "PM2", "CO2", "NOISE", "UV", "VIDEO" };
 
+    // RabbitMQ
+    private static IConnection _rmqConnection;
+    private static IModel _channel;
+    private const string ExchangeName = "urbanhealth_exchange";
+
     static async Task Main(string[] args) {
-
-        // Read console args
-        if (args.Length >= 2) {
+        if (args.Length >= 1) {
             SID = args[0];
-            GatewayIP = args[1];
         }
 
-        if (args.Length == 3) {
-            GatewayPort = int.Parse(args[2]);
-        }
+        Console.WriteLine($"[SYSTEM] Starting Sensor {SID} (RabbitMQ Pub/Sub)...");
 
-        Console.WriteLine($"[SYSTEM] Starting Sensor {SID} connecting to {GatewayIP}:{GatewayPort}...");
+        InitRabbitMQ();
+
         Console.WriteLine("==================================================");
         Console.WriteLine(" Interactive Menu. Available commands:");
         Console.WriteLine(" -> DATA <TYPE> <VALUE> (e.g., DATA HUM 65.2)");
-        Console.WriteLine(" -> STRM START (to request video transmission)");
-        Console.WriteLine(" -> STRM STOP (to end video transmission)");
+        Console.WriteLine(" -> STRM START (to start video transmission)");
+        Console.WriteLine(" -> STRM STOP (to stop video transmission)");
         Console.WriteLine(" -> DISCONN (to gracefully shutdown)");
         Console.WriteLine("==================================================\n");
 
-        // start parallel routines (will only send if authenticated)
+        // Publish initial status
+        PublishMessage("STS", "ONLINE");
+
+        // Start parallel routines (now without depending on TCP authentication)
         _ = Task.Run(HeartbeatRoutineAsync);
-        _ = Task.Run(ConnectToGatewayLoopAsync);
         _ = Task.Run(VideoStreamRoutineAsync);
-
         _ = Task.Run(DataGenerationRoutineAsync);
-
-
 
         while (true) {
             var input = Console.ReadLine();
             if (string.IsNullOrWhiteSpace(input)) continue;
 
-            // Split the user input by spaces
             var parts = input.Split(' ', StringSplitOptions.RemoveEmptyEntries);
             var command = parts[0].ToUpper();
 
             if (command == "DISCONN") {
-                if (_isAuthenticated && _gatewayClient != null && _gatewayClient.Connected) {
-                    var byeMsg = new Message { CMD = "DISCONN", SID = SID };
-                    await Message.SendMessageAsync(_gatewayClient, byeMsg);
-                    Console.WriteLine("[SENSOR] Sent DISCONN. Shutting down...");
+                PublishMessage("STS", "OFFLINE");
+                Console.WriteLine("[SENSOR] Shutting down...");
+                await Task.Delay(500);
 
-
-                    // wait half second to allow network to send packet before windows kill process
-                    await Task.Delay(500);
-
-                    _gatewayClient.Close();
-                }
-                else {
-                    Console.WriteLine("[SENSOR] Shutting down (was not connected).");
-                }
-                break; // Exits the while loop and closes the app
+                _channel?.Close();
+                _rmqConnection?.Close();
+                break;
             }
             else if (command == "STRM") {
-                if (!_isAuthenticated || _gatewayClient == null || !_gatewayClient.Connected) {
-                    Console.WriteLine("[WARNING] Cannot send stream request: Sensor is not authenticated.");
-                    continue;
-                }
-
                 if (parts.Length >= 2) {
                     string action = parts[1].ToUpper();
-                    
-                    if (action == "START" || action == "STOP") {
-                        _requestedStreamAction = action;
-
-                        var strmMsg = new Message { CMD = "STRM", SID = SID };
-                        strmMsg.Data["ACTION"] = action;
-
-                        await Message.SendMessageAsync(_gatewayClient, strmMsg);
-                        Console.WriteLine($"[SENSOR] Sent STRM {action}, waiting for authorization...");
-
-                        //// if its PHOTO, send immediatly 
-                        //if (action == "PHOTO") {
-                        //    _ = Task.Run(() => SendSinglePhotoAsync("frame.jpg"));
-                        //}
+                    if (action == "START") {
+                        _isStreaming = true;
+                        Console.WriteLine("[STREAM] Video transmission STARTED manually.");
                     }
-                    else {
-                        Console.WriteLine("[ERROR] Invalid action. Use: STRM START, STOP or PHOTO");
+                    else if (action == "STOP") {
+                        _isStreaming = false;
+                        Console.WriteLine("[STREAM] Video transmission STOPPED manually.");
                     }
                 }
-                else {
-                    Console.WriteLine("[ERROR] Invalid format. Use: STRM <ACTION>");
+            }
+            else if (command == "DATA" && parts.Length >= 3) {
+                string dataType = parts[1].ToUpper();
+                string dataValue = parts[2];
+
+                PublishMessage(dataType, dataValue);
+                Console.WriteLine($"[MANUAL] Sent {dataType}: {dataValue}");
+
+                if (double.TryParse(dataValue, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double numValue)) {
+                    HandleAlertLogic(dataType, numValue);
                 }
             }
-            else if (command == "DATA") {
-                if (!_isAuthenticated || _gatewayClient == null || !_gatewayClient.Connected) {
-                    Console.WriteLine("[WARNING] Cannot send data: Sensor is not authenticated with the Gateway.");
-                    continue;
-                }
-
-                // Ensure the user typed all 3 parts: DATA + TYPE + VALUE
-                if (parts.Length >= 3) {
-                    string dataType = parts[1].ToUpper();
-                    string dataValue = parts[2];
-
-                    var manualMsg = new Message { CMD = "DATA", SID = SID };
-                    manualMsg.Data["TYPE"] = dataType;
-                    manualMsg.Data["VALUE"] = dataValue;
-
-                    try {
-                        await Message.SendMessageAsync(_gatewayClient, manualMsg);
-                        Console.WriteLine($"[MANUAL] Sent {dataType}: {dataValue}");
-
-                        if (double.TryParse(dataValue, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double numValue)) {
-
-                            bool isAlert = IsAlertCondition(dataType, numValue);
-
-                            if (isAlert) {
-                                Console.WriteLine($"[SENSOR] High {dataType} detected! Requesting video...");
-                                _lastAlertTime = DateTime.Now;
-
-                                if (!_isStreaming) {
-                                    _requestedStreamAction = "START";
-                                    var strmMsg = new Message { CMD = "STRM", SID = SID };
-                                    strmMsg.Data["ACTION"] = "START";
-                                    await Message.SendMessageAsync(_gatewayClient, strmMsg);
-                                }
-                            } else {
-
-                                if (_isStreaming && (DateTime.Now - _lastAlertTime).TotalSeconds > 30) {
-                                    Console.WriteLine("[STREAM] Environment stabilized for 30s. Stopping video...");
-                                    _requestedStreamAction = "STOP";
-                                    var strmMsg = new Message { CMD = "STRM", SID = SID };
-                                    strmMsg.Data["ACTION"] = "STOP";
-
-                                    await Message.SendMessageAsync(_gatewayClient, strmMsg);
-                                }
-                            }
-                        }
-                    } catch (Exception ex) {
-                        Console.WriteLine($"[ERROR] Failed to send message: {ex.Message}");
-                        _isAuthenticated = false;
-                    }
-                }
-                else {
-                    Console.WriteLine("[ERROR] Invalid format. Use: DATA <TYPE> <VALUE>");
-                }
-            }
-            else {
-                Console.WriteLine("[ERROR] Unknown command. Use DATA, STRM or DISCONN.");
-            }
-        }
-
-    }
-
-
-    private static async Task ConnectToGatewayLoopAsync() {
-
-        while (true) {
-
-            try {
-
-                _gatewayClient = new TcpClient();
-                Console.WriteLine("[SENSOR] Trying to connect to Gateway...");
-
-                await _gatewayClient.ConnectAsync(GatewayIP, GatewayPort);
-                Console.WriteLine("[SENSOR] Connected to Gateway!");
-
-                var connMsg = new Message { CMD = "CONN", SID = SID };
-                connMsg.Data["DATA_TYPES"] = string.Join(",", _supportedTypes);
-
-                await Message.SendMessageAsync(_gatewayClient, connMsg);
-                Console.WriteLine("[SENSOR] Sent CONN, waiting for response...");
-
-                await ListenToGatewayAsync(_gatewayClient);
-
-            } catch {
-
-                Console.WriteLine("[SENSOR] Gateway offline, Retrying in 5 seconds...");
-            }
-
-            // if we reach here, the connection dropped
-            _isAuthenticated = false;
-            _isStreaming = false;
-            await Task.Delay(5000);
         }
     }
 
-    private static async Task ListenToGatewayAsync(TcpClient gateway) {
+    private static void InitRabbitMQ() {
+        var rabbitHost = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost";
+        var factory = new ConnectionFactory() { HostName = rabbitHost, AutomaticRecoveryEnabled = true };
 
+        int maxRetries = 10;
+        int delayMs = 3000;
+
+        for (int i = 0; i <= maxRetries; i++)
+        {
+            try
+            {
+                Console.WriteLine($"[RABBITMQ] Attempting to connect to {rabbitHost}... (Attempt {i}/{maxRetries})");
+                
+                _rmqConnection = factory.CreateConnection();
+                _channel = _rmqConnection.CreateModel();
+
+                // Declare a Topic Exchange
+                _channel.ExchangeDeclare(exchange: ExchangeName, type: ExchangeType.Topic);
+
+                Console.WriteLine("[RABBITMQ] Connection established securely!");
+                return;
+            } catch (RabbitMQ.Client.Exceptions.BrokerUnreachableException) {
+
+                Console.WriteLine($"[RABBITMQ WARNING] Broker is still booting. Retrying in {delayMs/1000} seconds...");
+                Thread.Sleep(delayMs);
+
+            } catch (Exception ex) {
+
+                Console.WriteLine($"[RABBITMQ FATAL] Unexpected connection error: {ex.Message}");
+                Thread.Sleep(delayMs);
+            }
+        }
+
+        throw new Exception("CRITICAL: Failed to connect to RabbitMQ broker after maximum retries. Shutting down.");
+        
+    }
+
+    // Generic method to publish JSON messages
+    private static void PublishMessage(string type, string value, string action = null, string base64Image = null) {
         try {
-            while (true) {
+            // The Routing Key defines who will receive it (e.g., sensor.S101.TEMP)
+            string routingKey = $"sensor.{SID}.{type}";
 
-                var msg = await Message.ReceiveMessageAsync(gateway);
-                if (msg == null) break; // Gateway closed the connection
+            var payload = new {
+                SID = SID,
+                Timestamp = DateTime.Now.ToString("o"),
+                Type = type,
+                Value = value,
+                Action = action, // Used for STRM START/STOP
+                ImageData = base64Image // Used to send video frames
+            };
 
-                string msgType = msg.Data.ContainsKey("TYPE") ? msg.Data["TYPE"] : "N/A";
+            string json = JsonSerializer.Serialize(payload);
+            var body = Encoding.UTF8.GetBytes(json);
 
-                // Avoid logging ACKs unless necessary
-                if (msgType != "ACK") {
-                    Console.WriteLine($"[GATEWAY -> SENSOR] Command received: {msg.CMD}; Type: {msgType}");
-                }
-
-                if (msg.CMD == "MSG" && msg.Data.ContainsKey("TYPE")) {
-
-                    if (msg.Data["TYPE"] == "ACK") {
-                        if (msg.Data["REF_CMD"] == "CONN") {
-                            _isAuthenticated = true;
-
-                            if (msg.Data.ContainsKey("ZONE")) _zone = msg.Data["ZONE"];
-                            Console.WriteLine($"[AUTH] Success! Operating in zone: {_zone}");
-                        }
-                        else if (msg.Data["REF_CMD"] == "STRM") {
-                            if (_requestedStreamAction == "START") {
-                                _isStreaming = true;
-                                Console.WriteLine("[STREAM] Gateway authorized START. Sending bytes...");
-                            }
-                            else if (_requestedStreamAction == "STOP") {
-                                _isStreaming = false;
-                                Console.WriteLine("[STREAM] Gateway authorized STOP. Video paused.");
-                            }
-                        }
-                    }
-                    else if (msg.Data["TYPE"] == "ERR") {
-                        if (msg.Data["REF_CMD"] == "CONN") {
-                            Console.WriteLine("[AUTH] Sensor got rejected by gateway.");
-                            break;
-                        }
-                    }
-                }
-            }
-        } catch { }
-        Console.WriteLine("[SENSOR] Connection to Gateway lost!");
-        _isAuthenticated = false;
-        _isStreaming = false;
+            _channel.BasicPublish(
+                exchange: ExchangeName,
+                routingKey: routingKey,
+                basicProperties: null,
+                body: body
+            );
+        } catch (Exception ex) {
+            Console.WriteLine($"[ERROR] Failed to publish to RabbitMQ: {ex.Message}");
+        }
     }
 
     private static async Task HeartbeatRoutineAsync() {
-
         while (true) {
-            await Task.Delay(10000); // send HB every 10 seconds
-
-            if (_isAuthenticated && _gatewayClient != null && _gatewayClient.Connected) {
-                try {
-                    var hbMsg = new Message { CMD = "HB", SID = SID };
-                    await Message.SendMessageAsync(_gatewayClient, hbMsg);
-                    // Console.WriteLine("[SENSOR] Sent HB"); // Uncomment to see in action
-                } catch {
-                    _isAuthenticated = false;
-                    _isStreaming = false;
-                }
-            }
+            await Task.Delay(10000);
+            PublishMessage("HB", "ALIVE");
         }
     }
 
     private static async Task DataGenerationRoutineAsync() {
         Random rnd = new Random();
 
-        // Lista dos tipos de dados suportados pelo nosso Sensor
-        string[] supportedTypes = { "TEMP", "HUM", "PM2", "CO2", "NOISE", "UV" };
-
         while (true) {
-            await Task.Delay(7000); // Gera um dado a cada 7 segundos
+            await Task.Delay(7000);
 
-            if (_isAuthenticated && _gatewayClient != null && _gatewayClient.Connected) {
-                try {
-                    var dataMsg = new Message { CMD = "DATA", SID = SID };
+            string selectedType = _supportedTypes[rnd.Next(_supportedTypes.Length - 1)]; // Excludes VIDEO from random
+            double value = selectedType switch {
+                "TEMP" => 15.0 + (rnd.NextDouble() * 20.0),
+                "HUM" => 40.0 + (rnd.NextDouble() * 40.0),
+                "PM2" => 5.0 + (rnd.NextDouble() * 45.0),
+                "CO2" => 400.0 + (rnd.NextDouble() * 600.0),
+                "NOISE" => 40.0 + (rnd.NextDouble() * 50.0),
+                "UV" => rnd.NextDouble() * 10.0,
+                _ => 0
+            };
 
-                    // Escolhe um tipo de dados aleatoriamente
-                    string selectedType = supportedTypes[rnd.Next(supportedTypes.Length)];
-                    dataMsg.Data["TYPE"] = selectedType;
+            string strValue = value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
 
-                    double value = 0;
+            PublishMessage(selectedType, strValue);
+            Console.WriteLine($"[DATA] Published {selectedType}: {strValue}");
 
-                    // Gera valores realistas baseados no tipo
-                    switch (selectedType) {
-                        case "TEMP":  // Temperature (15 to 35 °C)
-                            value = 15.0 + (rnd.NextDouble() * 20.0);
-                            break;
-                        case "HUM":   // Humidity (40 to 80 %)
-                            value = 40.0 + (rnd.NextDouble() * 40.0);
-                            break;
-                        case "PM2":   // Quality of air - particles (5 to 50 ug/m³)
-                            value = 5.0 + (rnd.NextDouble() * 45.0);
-                            break;
-                        case "CO2":   // Carbon Dioxide (400 to 1000 ppm)
-                            value = 400.0 + (rnd.NextDouble() * 600.0);
-                            break;
-                        case "NOISE": // Noise Pollution (40 to 90 dB)
-                            value = 40.0 + (rnd.NextDouble() * 50.0);
-                            break;
-                        case "UV":    // UV (0 to 10)
-                            value = rnd.NextDouble() * 10.0;
-                            break;
-                    }
-
-                    bool isAlert = IsAlertCondition(selectedType, value);
-
-                    dataMsg.Data["VALUE"] = value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
-
-                    await Message.SendMessageAsync(_gatewayClient, dataMsg);
-                    Console.WriteLine($"[DATA] {selectedType}: {dataMsg.Data["VALUE"]}");                    
-
-                    if (isAlert) {
-                        Console.WriteLine($"[SENSOR] High {selectedType} detected! Requesting video...");
-                        _lastAlertTime = DateTime.Now;
-
-                        if (!_isStreaming) {
-                            _requestedStreamAction = "START";
-                            var strmMsg = new Message { CMD = "STRM", SID = SID };
-                            strmMsg.Data["ACTION"] = "START";
-
-                            await Message.SendMessageAsync(_gatewayClient, strmMsg);
-
-                        }
-                    } else {
-                        
-                        if (_isStreaming && (DateTime.Now - _lastAlertTime).TotalSeconds > 30) {
-                            Console.WriteLine("[STREAM] Environment stabilized for 30s. Stopping video...");
-                            _requestedStreamAction = "STOP";
-                            var strmMsg = new Message { CMD = "STRM", SID = SID };
-                            strmMsg.Data["ACTION"] = "STOP";
-
-                            await Message.SendMessageAsync(_gatewayClient, strmMsg);
-                        }
-                    }
-
-                } catch {
-                    _isAuthenticated = false;
-                    _isStreaming = false;
-                }
-            }
+            HandleAlertLogic(selectedType, value);
         }
     }
 
-    private static async Task VideoStreamRoutineAsync() {
-        using var udpClient = new UdpClient();
-        const int chunkSize = 1400; 
-
-        // Pasta onde vais colocar a tua "sequência de vídeo"
-        string framesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Frames");
-
-        // Cria a pasta automaticamente se ela não existir
-        if (!Directory.Exists(framesFolder)) {
-            Directory.CreateDirectory(framesFolder);
-            // Console.WriteLine($"[AVISO DE VÍDEO] Criei a pasta: {framesFolder}");
-            // Console.WriteLine("[AVISO DE VÍDEO] Coloca lá algumas imagens .jpg (ex: 1.jpg, 2.jpg) para simular o vídeo.");
-        }
-
-        while (true) {
-            // Only stream if authenticated AND user requested START
-            if (!_isAuthenticated || !_isStreaming) {
-                await Task.Delay(1000);
-                continue;
-            }
-
-            // Get every image in directory
-            string[] frames = Directory.Exists(framesFolder)
-                ? Directory.GetFiles(framesFolder, "*.jpg")
-                : Array.Empty<string>();
-
-            if (frames.Length == 0) {
-                await Task.Delay(2000); // Wait if there is no images
-                continue;
-            }
-
-            // Percorre cada imagem (Frame) para criar a ilusão de movimento
-            foreach (var framePath in frames) {
-                // Double check status inside frame loop to stop instantly
-                if (!_isStreaming || !_isAuthenticated) break;
-
-                await Task.Delay(200); // ~5 FPS (Change to 100 to get 10 fps) 
-
-                try {
-                    byte[] imageBytes = await File.ReadAllBytesAsync(framePath);
-                    int totalParts = (int)Math.Ceiling((double)imageBytes.Length / chunkSize);
-
-                    for (int i = 0; i < totalParts; i++) {
-                        int currentOffset = i * chunkSize;
-                        int size = Math.Min(chunkSize, imageBytes.Length - currentOffset);
-                        byte[] buffer = new byte[size];
-                        Buffer.BlockCopy(imageBytes, currentOffset, buffer, 0, size);
-
-                        var videoMsg = new Message { CMD = "STRM", SID = SID, GID = "G101" };
-                        videoMsg.Data["TYPE"] = "DATA";
-                        videoMsg.Data["PART"] = (i + 1).ToString();
-                        videoMsg.Data["TOTAL"] = totalParts.ToString();
-                        videoMsg.BinaryData = buffer;
-
-                        byte[] packet = videoMsg.ToUdpBytes();
-                        await udpClient.SendAsync(packet, packet.Length, GatewayIP, 5002);
-                    }
-                } catch {
-                    // Ignore in silence
-                }
-            }
-        }
-    }
-
-    private static bool IsAlertCondition(string dataType, double value) {
-        return dataType switch {
+    private static void HandleAlertLogic(string dataType, double value) {
+        bool isAlert = dataType switch {
             "TEMP" => value > 33.0,
             "HUM" => value > 78.0,
             "PM2" => value > 48.0,
@@ -424,34 +195,55 @@ class Program {
             "UV" => value > 9.0,
             _ => false,
         };
+
+        if (isAlert) {
+            Console.WriteLine($"[SENSOR] High level of {dataType} detected! Starting video...");
+            _lastAlertTime = DateTime.Now;
+
+            if (!_isStreaming) {
+                _isStreaming = true;
+                PublishMessage("STRM", "", action: "START");
+            }
+        }
+        else if (_isStreaming && (DateTime.Now - _lastAlertTime).TotalSeconds > 30) {
+            Console.WriteLine("[STREAM] Environment stabilized for 30s. Stopping video...");
+            _isStreaming = false;
+            PublishMessage("STRM", "", action: "STOP");
+        }
     }
 
-    //private static async Task SendSinglePhotoAsync(string filePath) {
-    //    using var udpClient = new UdpClient();
-    //    const int chunkSize = 1400;
+    private static async Task VideoStreamRoutineAsync() {
+        string framesFolder = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Frames");
 
-    //    if (File.Exists(filePath)) {
-    //        byte[] imageBytes = await File.ReadAllBytesAsync(filePath);
-    //        int totalParts = (int)Math.Ceiling((double)imageBytes.Length / chunkSize);
+        if (!Directory.Exists(framesFolder)) Directory.CreateDirectory(framesFolder);
 
-    //        for (int i = 0; i < totalParts; i++) {
-    //            int currentOffset = i * chunkSize;
-    //            int size = Math.Min(chunkSize, imageBytes.Length - currentOffset);
-    //            byte[] buffer = new byte[size];
-    //            Buffer.BlockCopy(imageBytes, currentOffset, buffer, 0, size);
+        while (true) {
+            if (!_isStreaming) {
+                await Task.Delay(1000);
+                continue;
+            }
 
-    //            var msg = new Message { CMD = "STRM", SID = SID, GID = "G101" };
-    //            msg.Data["TYPE"] = "PHOTO_PART"; // Special flag so the gateway allows
-    //            msg.Data["PART"] = (i + 1).ToString();
-    //            msg.Data["TOTAL"] = totalParts.ToString();
-    //            msg.BinaryData = buffer;
+            string[] frames = Directory.Exists(framesFolder) ? Directory.GetFiles(framesFolder, "*.jpg") : Array.Empty<string>();
 
-    //            byte[] packet = msg.ToUdpBytes();
-    //            await udpClient.SendAsync(packet, packet.Length, GatewayIP, 5002);
-    //        }
-    //        Console.WriteLine("[SENSOR] Single photo transmission finished.");
-    //    } else {
-    //        Console.WriteLine("[ERROR] File frame.jpg not found for PHOTO action.");
-    //    }
-    //}
+            if (frames.Length == 0) {
+                await Task.Delay(2000);
+                continue;
+            }
+
+            foreach (var framePath in frames) {
+                if (!_isStreaming) break;
+
+                await Task.Delay(200); // 5 FPS
+
+                try {
+                    byte[] imageBytes = await File.ReadAllBytesAsync(framePath);
+                    // Since RabbitMQ can handle large messages (unlike UDP where we split every 1400 bytes), 
+                    // we can send the entire image as Base64 in a single JSON message, simplifying the Gateway.
+                    string base64 = Convert.ToBase64String(imageBytes);
+
+                    PublishMessage("VIDEO", "", base64Image: base64);
+                } catch { }
+            }
+        }
+    }
 }

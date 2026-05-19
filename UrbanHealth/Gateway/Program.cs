@@ -1,173 +1,215 @@
 ﻿using Gateway;
 using Grpc.Net.Client;
+using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 using Shared;
+using System;
 using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Text;
 using System.Text.Json;
-using Urbanhealth; // O nome que demos no "package" do ficheiro .proto
+using System.Threading;
+using System.Threading.Tasks;
+using Urbanhealth; // Namespace compiled from preprocess.proto
+
+public class SensorPayload {
+    public string SID { get; set; }
+    public string Timestamp { get; set; }
+    public string Type { get; set; }
+    public string Value { get; set; }
+    public string Action { get; set; }
+    public string ImageData { get; set; }
+}
 
 class Program {
-    private static TcpListener _listener;
-    private static TcpClient _serverClient; // Added to maintain the connection to the Central Server
-
-    private static UdpClient _udpListener;
-
-    private static readonly int UdpPort = 5002;
-    private static readonly int ServerUdpPort = 5003;
-    
-    private static UdpClient _serverUdpClient = new UdpClient();
-
-    private static readonly int Port = 5000;
-
-    private static readonly string ServerIP = Environment.GetEnvironmentVariable("SERVER_IP") ?? "13.60.255.33"; 
-
+    // Gateway Configuration Variables
+    private static readonly string GID = Environment.GetEnvironmentVariable("GATEWAY_ID") ?? "G101";
+    private static readonly string ServerIP = Environment.GetEnvironmentVariable("SERVER_IP") ?? "127.0.0.1";
     private static readonly int ServerPort = int.TryParse(Environment.GetEnvironmentVariable("SERVER_PORT"), out int sp) ? sp : 5001;
 
-    private static readonly string GID = Environment.GetEnvironmentVariable("GATEWAY_ID") ?? "G101";
-
-    // Store for incomplete frames: Dictionary<SensorID, List<PartBytes>>
-    private static ConcurrentDictionary<string, byte[][]> _videoBuffer = new();
-
-    // Registo da última imagem completa na RAM para o Web Server ler
-    private static ConcurrentDictionary<string, byte[]> _latestFrames = new();
-
-    private static ConfigManager _config = new ConfigManager();
-    // Registry of who's online right now (SID -> Last Activity)
-    private static ConcurrentDictionary<string, DateTime> _activeSensors = new();
-
-    // Registry of who's allowed to stream video right now
-    private static ConcurrentDictionary<string, bool> _activeStreams = new();
-
-    // Registry of time to clean UDP frames that lost packets
-    private static ConcurrentDictionary<string, DateTime> _videoBufferTimestamps = new();
-
-    // Registry of sensors and their DATA_TYPES (SID -> DataTypes[])
-    private static ConcurrentDictionary<string, string[]> _sensorsDatatypes = new();
-
-    // Buffer de Agregação (Batching): Guarda a (Hora exata, Valor)
-    private static ConcurrentDictionary<(string, string), ConcurrentBag<(DateTime, double)>> _valuesToForward = new();
-
-    // Write to server Mutex
+    // Upstream Cloud Server Connection
+    private static TcpClient _serverClient;
     private static readonly SemaphoreSlim _serverTxLock = new SemaphoreSlim(1, 1);
-
-    // Used to generate "Jitter" (Random delay)
     private static readonly Random _rnd = new Random();
 
+    // Data Management and In-Memory Storage
+    private static ConfigManager _config = new ConfigManager();
     private static LocalCacheManager _cache = new LocalCacheManager();
+    private static ConcurrentDictionary<string, DateTime> _activeSensors = new();
+    private static ConcurrentDictionary<(string, string), ConcurrentBag<(DateTime, double)>> _valuesToForward = new();
+    private static ConcurrentDictionary<string, byte[]> _latestFrames = new();
 
-    private static readonly GrpcChannel _grpcChannel = GrpcChannel.ForAddress("http://localhost:50051");
-    private static readonly PreProcessingService.PreProcessingServiceClient _rpcClient = new PreProcessingService.PreProcessingServiceClient(_grpcChannel);
+    // gRPC Client for Python Microservice
+    private static PreProcessingService.PreProcessingServiceClient _rpcClient;
 
     static async Task Main(string[] args) {
         _config.LoadConfig();
 
-        // Launch the Server connection task in the background (will try to connect infinitely)
+        Console.WriteLine($"[SYSTEM] Starting Gateway {GID}...");
+
+        // 1. Initialize gRPC channel pointing to the local Python Microservice
+        string rpcUrl = Environment.GetEnvironmentVariable("PREPROCESS_RPC_URL") ?? "http://localhost:50051";
+        var grpcChannel = GrpcChannel.ForAddress(rpcUrl);
+        _rpcClient = new PreProcessingService.PreProcessingServiceClient(grpcChannel);
+        Console.WriteLine("[RPC] Connection established to Python PreProcessing Service on port 50051.");
+
+        // 2. Start parallel execution routines
         _ = Task.Run(ConnectToServerLoopAsync);
-
         _ = Task.Run(GatewayHeartbeatRoutineAsync);
-
         _ = Task.Run(BatchDataRoutineAsync);
-
-        // Starts cleaning routine for inactive sensors (and video buffer)
-        _ = Task.Run(async () => {
-            while (true) {
-                await Task.Delay(2000); // Checks every 15 seconds
-                bool csvNeedsUpdate = false;
-
-                foreach (var sensor in _activeSensors) {
-                    // If more than 30 seconds since last HB
-                    if ((DateTime.Now - sensor.Value).TotalSeconds > 30) {
-                        Console.WriteLine($"[TIMEOUT] Sensor {sensor.Key} lost connection. Deactivating...");
-                        _activeSensors.TryRemove(sensor.Key, out _);
-                        _config.UpdateSensorState(sensor.Key, "offline");
-                        csvNeedsUpdate = true;
-                    }
-                }
-
-                if (csvNeedsUpdate) {
-                    _config.SaveConfig();
-                    Console.WriteLine("[SYSTEM] Config file updated.");
-                }
-
-                // Garbage collector for UDP Video
-                foreach (var frameTime in _videoBufferTimestamps) {
-                    
-                    // If more than 1.5 seconds passed and the image didn't mount yet, discard
-                    if ((DateTime.Now - frameTime.Value).TotalSeconds > 1.5) {
-                        _videoBuffer.TryRemove(frameTime.Key, out _);
-                        _videoBufferTimestamps.TryRemove(frameTime.Key, out _);
-                        //Console.WriteLine($"[UDP CLEANUP] Incomplete frame from {frameTime.Key} discarded to free RAM.");
-                    }
-                }
-            }
-        });
-
-        // Start the Gateway to listen for Sensors
-        _listener = new TcpListener(IPAddress.Any, Port);
-        _listener.Start();
-        Console.WriteLine($"[GATEWAY] Active on port {Port}");
-
-        // inicia o listener de video udp
-        _udpListener = new UdpClient(UdpPort);
-        _ = Task.Run(ListenForVideoUdpAsync);
-
-        // starts web server
         _ = Task.Run(StartWebServerAsync);
+        _ = Task.Run(SensorTimeoutMonitorRoutineAsync);
+
+        // 3. Start consuming background events from RabbitMQ
+        StartRabbitMQConsumer();
 
         Console.WriteLine("==================================================");
         Console.WriteLine(" Gateway Menu. Available commands:");
-        Console.WriteLine(" -> DISCONN (to shutdown gateway in a clean way)");
+        Console.WriteLine(" -> DISCONN (to shutdown gateway gracefully)");
         Console.WriteLine("==================================================\n");
 
-        _ = Task.Run(AcceptSensorsLoopAsync);
-
-        
         while (true) {
             var input = Console.ReadLine();
             if (string.IsNullOrWhiteSpace(input)) continue;
 
-            var command = input.Trim().ToUpper();
-
-            if (command == "DISCONN") {
+            if (input.Trim().ToUpper() == "DISCONN") {
                 await PerformGracefulShutdownAsync();
-                break; 
+                break;
             }
             else {
                 Console.WriteLine("[ERROR] Unknown command. Use DISCONN.");
             }
         }
-
-
     }
 
-    private static async Task BatchDataRoutineAsync()
-    {
-        int batchWindowMs = 30000; // Envia pacotes a cada 30 segundos
+    private static void StartRabbitMQConsumer() {
+        var rabbitHost = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost";
+        var factory = new ConnectionFactory() { HostName = rabbitHost, AutomaticRecoveryEnabled = true };
 
-        while (true)
-        {
+        int maxRetries = 10;
+        int delayMs = 3000;
+
+        for (int i = 1; i <= maxRetries; i++) {
+            try {
+                Console.WriteLine($"[RABBITMQ] Gateway attempting to connect to {rabbitHost}... (Attempt {i}/{maxRetries})");
+                
+                var connection = factory.CreateConnection();
+                var channel = connection.CreateModel();
+
+                channel.ExchangeDeclare(exchange: "urbanhealth_exchange", type: ExchangeType.Topic);
+
+                // Declare an exclusive ephemeral queue for this Gateway instance
+                var queueName = channel.QueueDeclare().QueueName;
+
+                // Bind the queue to intercept all sensor data topics
+                channel.QueueBind(queue: queueName, exchange: "urbanhealth_exchange", routingKey: "sensor.#");
+
+                var consumer = new EventingBasicConsumer(channel);
+                consumer.Received += (model, ea) => {
+                    var body = ea.Body.ToArray();
+                    var messageJson = Encoding.UTF8.GetString(body);
+
+                    try {
+                        var payload = JsonSerializer.Deserialize<SensorPayload>(messageJson);
+                        ProcessRabbitMQMessage(payload);
+                    } catch (Exception ex) {
+                        Console.WriteLine($"[JSON ERROR] Failed to parse payload: {ex.Message}");
+                    }
+                };
+
+                channel.BasicConsume(queue: queueName, autoAck: true, consumer: consumer);
+                Console.WriteLine("[RABBITMQ] Gateway listening to distributed topic events securely.");
+                
+                return; // Ligação bem sucedida! Sai do ciclo de tentativas.
+
+            } catch (RabbitMQ.Client.Exceptions.BrokerUnreachableException) {
+                Console.WriteLine($"[RABBITMQ WARNING] Broker is still booting. Gateway retrying in {delayMs/1000} seconds...");
+                Thread.Sleep(delayMs);
+            } catch (Exception ex) {
+                Console.WriteLine($"[RABBITMQ WARNING] Unexpected error: {ex.Message}. Gateway retrying in {delayMs/1000} seconds...");
+                Thread.Sleep(delayMs);
+            }
+        }
+
+        Console.WriteLine("[RABBITMQ CRITICAL] Infrastructure error: Failed to connect after maximum retries.");
+    }
+
+    private static void ProcessRabbitMQMessage(SensorPayload payload) {
+        if (payload == null) return;
+
+        _activeSensors[payload.SID] = DateTime.Now;
+
+        // Handle incoming raw binary video streams via Base64 mapping
+        if (payload.Type == "VIDEO" && !string.IsNullOrEmpty(payload.ImageData)) {
+            try {
+                _latestFrames[payload.SID] = Convert.FromBase64String(payload.ImageData);
+            } catch { }
+            return;
+        }
+
+        // Filter system messaging overhead
+        if (payload.Type == "STS" || payload.Type == "HB" || payload.Type == "STRM") {
+            return;
+        }
+
+        // Process telemetry metrics through gRPC clean rules
+        try {
+            if (!double.TryParse(payload.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double numericValue)) {
+                Console.WriteLine($"[PARSING ERROR] Cannot convert value '{payload.Value}' for Sensor {payload.SID}");
+                return;
+            }
+
+            // Map data to the exact compiled Protobuf contract structures
+            var rpcRequest = new DataRequest {
+                SensorId = payload.SID,
+                DataType = payload.Type,
+                RawValue = numericValue
+            };
+
+            // Execute blocking remote call to python microservice
+            var rpcResponse = _rpcClient.ProcessData(rpcRequest);
+
+            if (rpcResponse.Success) {
+                Console.WriteLine($"[RPC SUCCESS] {payload.SID} [{payload.Type}] verified: {rpcResponse.ProcessedValue}");
+
+                // Buffer clean metrics inside thread-safe local bag for safe cloud batching
+                var bufferKey = (payload.SID, payload.Type);
+                var readingsBag = _valuesToForward.GetOrAdd(bufferKey, _ => new ConcurrentBag<(DateTime, double)>());
+                readingsBag.Add((DateTime.Now, rpcResponse.ProcessedValue));
+            }
+            else {
+                Console.WriteLine($"[RPC REJECTED] Clean rules failed for {payload.SID}: {rpcResponse.Message}");
+            }
+        } catch (Exception ex) {
+            Console.WriteLine($"[RPC FAULT] PreProcessing server unreachable: {ex.Message}");
+        }
+    }
+
+    private static async Task BatchDataRoutineAsync() {
+        int batchWindowMs = 30000; // Flushes accumulated metrics to cloud every 30 seconds
+
+        while (true) {
             await Task.Delay(batchWindowMs);
 
-            // 1. TENTAR ENVIAR DADOS DO CACHE SQLITE PRIMEIRO (Recuperação de falhas anteriores)
+            // 1. Process local offline storage recovery checks first
             var pendingReadings = _cache.GetPendingReadings();
-            if (pendingReadings.Count > 0)
-            {
-                Console.WriteLine($"[CACHE] Encontrados {pendingReadings.Count} registos pendentes no SQLite. A tentar reenviar...");
-
-                // Agrupamos por Sensor e Tipo para manter a estrutura de Batch
+            if (pendingReadings.Count > 0) {
+                Console.WriteLine($"[RECOVERY] Found {pendingReadings.Count} cached rows in local SQLite database. Attempting synchronization...");
                 var groupedPending = pendingReadings.GroupBy(x => (x.Sid, x.Type));
 
-                foreach (var group in groupedPending)
-                {
+                foreach (var group in groupedPending) {
                     var sensorId = group.Key.Sid;
                     var dataType = group.Key.Type;
                     var (exists, zone, _, _, _) = _config.ValidateSensor(sensorId);
 
                     var payloadList = group.Select(item => new Dictionary<string, string> {
-                    { "Timestamp", item.Ts.ToString("o") },
-                    { "Value", item.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) }
-                }).ToList();
+                        { "Timestamp", item.Ts.ToString("o") },
+                        { "Value", item.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                    }).ToList();
 
                     var cacheMsg = new Message { CMD = "FWD", SID = sensorId, GID = GID };
                     cacheMsg.Data["TYPE"] = dataType;
@@ -175,43 +217,21 @@ class Program {
                     cacheMsg.Data["BATCH_COUNT"] = payloadList.Count.ToString();
                     cacheMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
 
-                    try
-                    {
-                        // Verifica se há conexão antes de tentar
-                        if (_serverClient == null || !_serverClient.Connected)
-                        {
-                            Console.WriteLine($"[CACHE] Servidor desconectado. A manter dados em cache por mais um ciclo...");
-                            break;
-                        }
+                    try {
+                        if (_serverClient == null || !_serverClient.Connected) break;
 
                         await _serverTxLock.WaitAsync();
-                        try
-                        {
-                            await Message.SendMessageAsync(_serverClient, cacheMsg);
-                        }
-                        finally
-                        {
-                            _serverTxLock.Release();
-                        }
-                        // Se enviou com sucesso, apaga estes IDs do SQLite
+                        try { await Message.SendMessageAsync(_serverClient, cacheMsg); } finally { _serverTxLock.Release(); }
+
                         _cache.DeleteReadings(group.Select(x => x.Id));
-                        Console.WriteLine($"[CACHE] {payloadList.Count} registos de {sensorId} recuperados com sucesso.");
-                    }
-                    catch (Exception cacheEx)
-                    {
-                        Console.WriteLine($"[CACHE] Falha ao tentar recuperar dados de {sensorId}. Tentará novamente no próximo ciclo.");
-                        Console.WriteLine($"[CACHE] Erro: {cacheEx.Message}");
-                        Console.WriteLine($"[CACHE] Exception Type: {cacheEx.GetType().Name}");
-                        break; // Interrompe para não sobrecarregar em caso de nova queda
-                    }
+                        Console.WriteLine($"[RECOVERY SUCCESS] Synced {payloadList.Count} cached rows for {sensorId}.");
+                    } catch { break; }
                 }
             }
 
-            // 2. PROCESSAR DADOS ATUAIS NA MEMÓRIA
-            foreach (var key in _valuesToForward.Keys)
-            {
-                if (_valuesToForward.TryRemove(key, out var readingsBag))
-                {
+            // 2. Flush current volatile operational memory state
+            foreach (var key in _valuesToForward.Keys) {
+                if (_valuesToForward.TryRemove(key, out var readingsBag)) {
                     var snapshot = readingsBag.ToList();
                     if (snapshot.Count == 0) continue;
 
@@ -219,14 +239,10 @@ class Program {
                     string dataType = key.Item2;
                     var (_, zone, _, _, _) = _config.ValidateSensor(sensorId);
 
-                    var payloadList = new List<Dictionary<string, string>>();
-                    foreach (var item in snapshot)
-                    {
-                        payloadList.Add(new Dictionary<string, string> {
+                    var payloadList = snapshot.Select(item => new Dictionary<string, string> {
                         { "Timestamp", item.Item1.ToString("o") },
                         { "Value", item.Item2.ToString(System.Globalization.CultureInfo.InvariantCulture) }
-                    });
-                    }
+                    }).ToList();
 
                     var batchMsg = new Message { CMD = "FWD", SID = sensorId, GID = GID };
                     batchMsg.Data["TYPE"] = dataType;
@@ -234,43 +250,16 @@ class Program {
                     batchMsg.Data["BATCH_COUNT"] = snapshot.Count.ToString();
                     batchMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
 
-                    try
-                    {
-                        // Se não há conexão ao servidor, vai direto para o cache
-                        if (_serverClient == null || !_serverClient.Connected)
-                        {
-                            Console.WriteLine($"[ERROR-OFFLINE] Servidor desconectado. Guardando {snapshot.Count} leituras de {sensorId} em cache imediatamente...");
-                            throw new Exception("Server not connected");
-                        }
+                    try {
+                        if (_serverClient == null || !_serverClient.Connected) throw new Exception("Cloud network down");
 
                         await _serverTxLock.WaitAsync();
-                        try
-                        {
-                            await Message.SendMessageAsync(_serverClient, batchMsg);
-                        }
-                        finally
-                        {
-                            _serverTxLock.Release();
-                        }
-                        Console.WriteLine($"[BATCHING] Pacote de {snapshot.Count} leituras de {sensorId} enviado.");
-                    }
-                    catch (Exception ex)
-                    {
-                        // EM CASO DE ERRO: Persiste no SQLite em vez de voltar para a ConcurrentBag
-                        Console.WriteLine($"[ERROR-OFFLINE] Falha ao enviar para o servidor: {ex.Message}");
-                        Console.WriteLine($"[ERROR-OFFLINE] Exception Type: {ex.GetType().Name}");
-                        Console.WriteLine($"[CACHE] A guardar {snapshot.Count} leituras de {sensorId} ({dataType}) no disco para segurança.");
-
-                        foreach (var reading in snapshot)
-                        {
-                            try
-                            {
-                                _cache.SaveReading(sensorId, dataType, reading.Item2, reading.Item1);
-                            }
-                            catch (Exception cacheEx)
-                            {
-                                Console.WriteLine($"[CACHE-CRITICAL] FALHA ao guardar no cache: {cacheEx.Message}");
-                            }
+                        try { await Message.SendMessageAsync(_serverClient, batchMsg); } finally { _serverTxLock.Release(); }
+                        Console.WriteLine($"[UPSTREAM] Packet with {snapshot.Count} entries from {sensorId} transmitted successfully.");
+                    } catch {
+                        Console.WriteLine($"[OFFLINE STORAGE] Cloud unreachable. Saving {snapshot.Count} metrics from {sensorId} into SQLite.");
+                        foreach (var reading in snapshot) {
+                            _cache.SaveReading(sensorId, dataType, reading.Item2, reading.Item1);
                         }
                     }
                 }
@@ -278,551 +267,123 @@ class Program {
         }
     }
 
-    private static async Task PerformGracefulShutdownAsync() {
-        Console.WriteLine("\n[SYSTEM] Shutting down...");
-
-        // Notify Server that we are going to shutdown
-        if (_serverClient != null && _serverClient.Connected) {
-            try {
-                var byeMsg = new Message { CMD = "DISCONN", GID = GID, SID = "GATEWAY" };
-                try {
-                    await Message.SendMessageAsync(_serverClient, byeMsg);
-                } finally {
-                    _serverTxLock.Release();
-                }
-                Console.WriteLine("[SHUTDOWN] Server notified with success.");
-
-                await Task.Delay(500);
-
-                _serverClient.Close();
-            } catch { }
-        }
-
-        // Stop listening new sensors and video
-        if (_listener != null) _listener.Stop();
-        if (_udpListener != null) _udpListener.Close();
-      
-        // Give 500ms to NIC send last packet before closing program
-        await Task.Delay(500);
-
-        Console.WriteLine("[SYSTEM] Gateway shutdown with success...");
-        Environment.Exit(0);
-    }
-
-    // SERVER LOGIC (UPSTREAM)
-
     private static async Task ConnectToServerLoopAsync() {
-
-        int baseDelayMs = 2000; // Starts by waiting 2 seconds
+        int baseDelayMs = 2000;
         int maxDelayMs = 60000;
         int currentDelayMs = baseDelayMs;
 
         while (true) {
             try {
                 _serverClient = new TcpClient();
-                Console.WriteLine($"[GATEWAY] Trying to connect to Server ({ServerIP}:{ServerPort})...");
+                Console.WriteLine($"[UPSTREAM] Connecting to Central Cloud Server ({ServerIP}:{ServerPort})...");
 
                 await _serverClient.ConnectAsync(ServerIP, ServerPort);
-                Console.WriteLine("[GATEWAY] Connected to Server!");
-                
-                // Reset the timer
+                Console.WriteLine("[UPSTREAM] Connection established with Cloud Server!");
                 currentDelayMs = baseDelayMs;
 
-                // Let server know we are online
-                var sts = new Message { CMD = "STS", GID = GID };
-                sts.Data["STATUS"] = "ONLINE";
+                var statusMsg = new Message { CMD = "STS", GID = GID };
+                statusMsg.Data["STATUS"] = "ONLINE";
 
                 await _serverTxLock.WaitAsync();
-                try {
-                    await Message.SendMessageAsync(_serverClient, sts);
-                } finally {
-                    _serverTxLock.Release();
+                try { await Message.SendMessageAsync(_serverClient, statusMsg); } finally { _serverTxLock.Release(); }
+
+                while (true) {
+                    var msg = await Message.ReceiveMessageAsync(_serverClient);
+                    if (msg == null) break;
                 }
+            } catch { }
 
-                await ListenToServerAsync(_serverClient);
-            } catch {
-                
-            }
-            
-            // Exponential backoff with jitter
-
-            // Adds between 0 and 1000 random ms (Jitter)
             int jitter = _rnd.Next(0, 1000);
             int sleepTime = currentDelayMs + jitter;
-
-            Console.WriteLine($"[GATEWAY] Inaccessible Server. New try in {sleepTime / 1000.0:F1} seconds...");
+            Console.WriteLine($"[UPSTREAM LINK LOST] Reconnecting to cloud in {sleepTime / 1000.0:F1}s...");
             await Task.Delay(sleepTime);
-            
-            // Multiply time by 2, but dont go over maxDelayMs
             currentDelayMs = Math.Min(currentDelayMs * 2, maxDelayMs);
-        }
-    }
-
-    private static async Task ListenToServerAsync(TcpClient server) {
-        try {
-            while (true) {
-                var msg = await Message.ReceiveMessageAsync(server);
-                if (msg == null) break; // Server closed the connection
-
-                string msgType = msg.Data.ContainsKey("TYPE") ? msg.Data["TYPE"] : "N/A";
-                Console.WriteLine($"[SERVER -> GATEWAY] Command received: {msg.CMD}; Type: {msgType}");
-                // Here we can process ACKs from the server in the future
-            }
-        } catch {
-            Console.WriteLine("[GATEWAY] Connection to Server lost!");
         }
     }
 
     private static async Task GatewayHeartbeatRoutineAsync() {
         while (true) {
-            await Task.Delay(10000); // Beats every 10 secs
-
+            await Task.Delay(10000);
             if (_serverClient != null && _serverClient.Connected) {
                 try {
                     var hbMsg = new Message { CMD = "HB", GID = GID };
                     await _serverTxLock.WaitAsync();
-                    try {
-                        await Message.SendMessageAsync(_serverClient, hbMsg);
-                    } finally {
-                        _serverTxLock.Release();
-                    }
-                } catch {
-                    // If send fails, the reconnection routine will recover the socket
-                }
-            }
-        }
-    }
-
-
-    // SENSOR LOGIC (DOWNSTREAM)
-
-    private static async Task AcceptSensorsLoopAsync() {
-        while (true) {
-            try {
-                var client = await _listener.AcceptTcpClientAsync();
-                Console.WriteLine($"[GATEWAY] New sensor detected. Initiating handler...");
-                _ = Task.Run(() => HandleSensorAsync(client));
-            } catch {                
-                // if listener gets closed during shutdown, the error falls here silently and routine ends
-                break;
-            }
-        }
-    }
-
-
-    private static async Task HandleSensorAsync(TcpClient client) {
-        using (client) {
-            string sensorId = "Unknown";
-            try {
-                while (true) {
-                    var msg = await Message.ReceiveMessageAsync(client);
-
-                    if (msg == null) {
-                        Console.WriteLine($"[DISCONNECT] Sensor {sensorId} closed the connection.");
-                        if (sensorId != "Unknown" && _activeSensors.ContainsKey(sensorId)) {
-                            _activeSensors.TryRemove(sensorId, out _);
-                            _config.UpdateSensorState(sensorId, "offline");
-                            _config.SaveConfig();
-                        }
-                        break;
-                    }
-
-                    sensorId = msg.SID;
-                    Console.WriteLine($"[RECEIVED] Command: {msg.CMD} by {msg.SID}");
-                    await ProcessMessage(client, msg);
-
-   
-                    // break out of the loop to not read a dead socket
-                    if (msg.CMD == "DISCONN") {
-                        break;
-                    }
-                }
-            } catch (Exception ex) {
-                Console.WriteLine($"[ERROR] Failure in communication with {sensorId}: {ex.Message}");
-            }
-        }
-    }
-
-    private static async Task ProcessMessage(TcpClient client, Message msg) {
-        switch (msg.CMD) {
-            case "CONN":
-                await HandleConnection(client, msg);
-                break;
-
-            case "DISCONN":
-                await HandleDisconnection(client, msg);
-                break;
-
-            case "DATA":
-                await HandleData(client, msg);
-                break;
-
-            case "HB":
-                if (_activeSensors.ContainsKey(msg.SID)) {
-                    _activeSensors[msg.SID] = DateTime.Now;
-                    _config.UpdateLastSync(msg.SID);
-                    // Console.WriteLine($"[HB] {msg.SID} is alive.");
-                }
-                break;
-
-            case "STRM":
-                await HandleStreamControl(client, msg);
-                break;
-        }
-    }
-
-    private static async Task HandleConnection(TcpClient client, Message msg) {
-        var (exists, zone, state, allowedTypes, _) = _config.ValidateSensor(msg.SID);
-
-        var response = new Message {
-            CMD = "MSG",
-            SID = msg.SID,
-            GID = GID
-        };
-        response.Data["REF_CMD"] = "CONN";
-
-        if (exists) {
-
-            if (state.ToLower() == "maintenance") {
-                response.Data["TYPE"] = "ERR";
-                response.Data["REASON"] = "MAINTENANCE";
-                Console.WriteLine($"[AUTH] Sensor {msg.SID} rejected (Under Maintenance)");
-
-                if (_serverClient != null && _serverClient.Connected) {
-                    var statusMsg = new Message { CMD = "STS", SID = msg.SID, GID = GID };
-                    statusMsg.Data["STATUS"] = "MAINTENANCE";
-
-                    await _serverTxLock.WaitAsync();
-                    try {
-                        await Message.SendMessageAsync(_serverClient, statusMsg);
-                    } finally {
-                        _serverTxLock.Release();
-                    }
-                }
-            } else {
-
-                string dataTypes = msg.Data.ContainsKey("DATA_TYPES") ? msg.Data["DATA_TYPES"] : allowedTypes;
-
-                _config.UpdateSensorDataTypes(msg.SID, dataTypes);
-
-                response.Data["TYPE"] = "ACK";
-                response.Data["ZONE"] = zone; // Inject the zone so the sensor knows
-
-                _activeSensors[msg.SID] = DateTime.Now;
-                Console.WriteLine($"[AUTH] Sensor {msg.SID} authorized in {zone}");
-
-                // inform server that the sensor got connected
-                if (_serverClient != null && _serverClient.Connected) {
-                    var statusMsg = new Message { CMD = "STS", SID = msg.SID, GID = GID };
-                    statusMsg.Data["STATUS"] = "ONLINE";
-
-                    await _serverTxLock.WaitAsync();
-                    try {
-                        await Message.SendMessageAsync(_serverClient, statusMsg);
-                    } finally {
-                        _serverTxLock.Release();
-                    }
-
-                    Console.WriteLine($"[FORWARD] Sensor {msg.SID} connected to gateway {msg.GID}.");
-                }
-            }
-
-        }
-        else {
-            response.Data["TYPE"] = "ERR";
-            response.Data["REASON"] = "UNKNOWN_SENSOR";
-            Console.WriteLine($"[AUTH] Sensor {msg.SID} rejected");
-        }
-
-        await Message.SendMessageAsync(client, response);
-    }
-
-    private static async Task HandleDisconnection(TcpClient client, Message msg) {
-        Console.WriteLine($"\n[DISCONNECT] Disconnection request from sensor {msg.SID}");
-                            
-        if (_activeSensors.ContainsKey(msg.SID)) {
-            // remove from active sensors in memory
-            _activeSensors.TryRemove(msg.SID, out _);
-
-            // update satte to offline in csv and saves on disc
-            _config.UpdateSensorState(msg.SID, "offline");
-            _config.SaveConfig();
-
-            Console.WriteLine($"[SYSTEM] Sensor {msg.SID} closed and saved as offline.");
-
-            // inform server that the sensor got disconnected
-            if (_serverClient != null && _serverClient.Connected) {
-                var fwdMsg = new Message { CMD = "DISCONN", SID = msg.SID, GID = GID };
-
-                await _serverTxLock.WaitAsync();
-                try {
-                    await Message.SendMessageAsync(_serverClient, fwdMsg);
-                } finally {
-                    _serverTxLock.Release();
-                }
-
-                Console.WriteLine($"[FORWARD] Disconnection warning from {msg.SID} to server");
-            }
-        }
-    }
-
-    private static async Task HandleData(TcpClient client, Message msg) {
-        // Only accept data from sensors who "CONN" with success
-        if (_activeSensors.ContainsKey(msg.SID)) {
-            _activeSensors[msg.SID] = DateTime.Now;
-
-            var (_, zone, _, allowedTypes, _) = _config.ValidateSensor(msg.SID);
-            string dataType = msg.Data.ContainsKey("TYPE") ? msg.Data["TYPE"] : "UNKNOWN";
-
-            if (!allowedTypes.Contains(dataType)) {
-                Console.WriteLine($"[WARNING] {msg.SID} tried to send unsupported type: {dataType}");
-                var err = new Message { CMD = "MSG", SID = msg.SID, GID = GID };
-                err.Data["REF_CMD"] = "DATA";
-                err.Data["TYPE"] = "ERR";
-                err.Data["REASON"] = "UNSUPPORTED_TYPE";
-                await Message.SendMessageAsync(client, err);
-                return; // Corta a execução aqui
-            }
-
-            msg.Data["ZONE"] = zone;
-
-            Console.WriteLine($"[DATA] {msg.SID} sent {msg.Data["VALUE"]} ({msg.Data["TYPE"]})");
-
-            // Enviar ACK ao sensor
-            var ack = new Message { CMD = "MSG", SID = msg.SID, GID = GID };
-            ack.Data["REF_CMD"] = "DATA";
-            ack.Data["TYPE"] = "ACK";
-            await Message.SendMessageAsync(client, ack);
-
-            if (double.TryParse(msg.Data["VALUE"], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double sensorValue)) {
-
-                // VERIFICA SE É UMA EMERGÊNCIA
-                bool isAlert = IsAlertCondition(dataType, sensorValue);
-
-                if (isAlert) {
-                    Console.WriteLine($"[EMERGENCY] High {dataType} from {msg.SID}! Bypassing batching (Speed Layer)...");
-
-                    // Formata um payload JSON com apenas esta leitura instantânea
-                    var payloadList = new List<Dictionary<string, string>> {
-                        new Dictionary<string, string> {
-                            { "Timestamp", DateTime.Now.ToString("o") },
-                            { "Value", sensorValue.ToString(System.Globalization.CultureInfo.InvariantCulture) }
-                        }
-                    };
-
-                    var alertBatchMsg = new Message { CMD = "FWD", SID = msg.SID, GID = GID };
-                    alertBatchMsg.Data["TYPE"] = dataType;
-                    alertBatchMsg.Data["ZONE"] = zone;
-                    alertBatchMsg.Data["BATCH_COUNT"] = "1";
-                    alertBatchMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
-
-                    // Tenta enviar logo para o servidor (com o respetivo Lock de concorrência)
-                    if (_serverClient != null && _serverClient.Connected) {
-                        await _serverTxLock.WaitAsync();
-                        try {
-                            await Message.SendMessageAsync(_serverClient, alertBatchMsg);
-                        } finally {
-                            _serverTxLock.Release();
-                        }
-                    }
-                    else {
-                        // Se o servidor estiver offline, o dado crítico vai para o SQLite na mesma
-                        _cache.SaveReading(msg.SID, dataType, sensorValue, DateTime.Now);
-                    }
-                }
-                else {
-                    // DADOS NORMAIS
-                    var bufferKey = (msg.SID, dataType);
-                    var readingsBag = _valuesToForward.GetOrAdd(bufferKey, _ => new ConcurrentBag<(DateTime, double)>());
-
-                    readingsBag.Add((DateTime.Now, sensorValue));
-                }
-
-            }
-            else {
-                Console.WriteLine($"[ERROR] Não foi possível converter o valor '{msg.Data["VALUE"]}' para número.");
-            }
-        }
-    }
-
-    // LÓGICA DE VIDEO (UDP)
-
-    private static async Task HandleStreamControl(TcpClient client, Message msg) {
-
-        if (!_activeSensors.ContainsKey(msg.SID)) return; // only online sensors can ask permission to stream
-
-        var (_, _, _, allowedTypes, _) = _config.ValidateSensor(msg.SID);
-        allowedTypes.Split(',');
-        bool isCapableOfStreaming = allowedTypes.Contains("VIDEO");
-
-        string action = msg.Data.ContainsKey("ACTION") ? msg.Data["ACTION"].ToUpper() : "";
-
-        var response = new Message { CMD = "MSG", SID = msg.SID, GID = GID };
-        response.Data["REF_CMD"] = "STRM";
-
-        if (action == "START" && isCapableOfStreaming) {
-            _activeStreams.TryAdd(msg.SID, true);
-            response.Data["TYPE"] = "ACK";
-            Console.WriteLine($"[STREAM] The sensor {msg.SID} started video streaming");
-
-            // change output color 
-            Console.ForegroundColor = ConsoleColor.Red;
-            Console.WriteLine($"    -> Live: http://localhost:8080/stream/{msg.SID}");
-            Console.ResetColor();
-
-            // Let server know that stream started
-            if (_serverClient != null && _serverClient.Connected) {
-                var fwdStrm = new Message { CMD = "FWD_STRM", SID = msg.SID, GID = GID };
-                fwdStrm.Data["ACTION"] = "START";
-
-                await _serverTxLock.WaitAsync();
-                try {
-                    await Message.SendMessageAsync(_serverClient, fwdStrm);
-                } finally {
-                    _serverTxLock.Release();
-                }
-            }
-
-        } else if (action == "STOP") {
-            _activeStreams.TryRemove(msg.SID, out _);
-
-            // clean any garbage that might have stayed in this sensor buffer
-            _videoBuffer.TryRemove(msg.SID, out _);
-
-            response.Data["TYPE"] = "ACK";
-            Console.WriteLine($"[STREAM] The sensor {msg.SID} stopped video streaming");
-        } else if (action == "PHOTO") {
-
-            // don't need to add to _activeStreams
-            // Just clean the previous buffer to ensure the photo is "fresh"
-            _videoBuffer.TryRemove(msg.SID, out _);
-            response.Data["TYPE"] = "ACK";
-            Console.WriteLine($"[STREAM] The sensor {msg.SID} sent a photo");
-
-        } else {
-            response.Data["TYPE"] = "ERR";
-            response.Data["REASON"] = "INVALID_ACTION";
-        }
-
-        await Message.SendMessageAsync(client, response);
-    }
-
-    private static async Task ListenForVideoUdpAsync() {
-        try {
-            
-            Console.WriteLine("[GATEWAY-VIDEO] UDP Listener listening on port 5002...");
-
-            while (true) {
-                var result = await _udpListener.ReceiveAsync();
-                // Console.WriteLine($"\n[DEBUG UDP] -> Recebi pacote UDP de {result.Buffer.Length} bytes!");
-
-                var msg = Message.FromUdpBytes(result.Buffer);
-
-                if (msg == null) {
-                    // Console.WriteLine("[DEBUG UDP] -> ERRO: O pacote não é uma Message válida.");
-                    continue;
-                }
-
-                // Console.WriteLine($"[DEBUG UDP] -> Mensagem convertida: SID={msg.SID}, PARTE={msg.Data["PART"]}/{msg.Data["TOTAL"]}");
-
-                if (!_activeSensors.ContainsKey(msg.SID)) {
-                    Console.WriteLine($"[ERROR] The sensor {msg.SID} is not on the sensors list!");
-                    continue;
-                }
-
-                if (!_activeStreams.ContainsKey(msg.SID) && msg.Data.GetValueOrDefault("TYPE", "") != "PHOTO_PART") {
-                    Console.WriteLine($"[WARNING] Video package rejected. {msg.SID} didn's start STRM.");
-                    continue;
-                }
-
-                // Forward UDP packet to server  
-                try {
-                    await _serverUdpClient.SendAsync(result.Buffer, result.Buffer.Length, ServerIP, ServerUdpPort);
+                    try { await Message.SendMessageAsync(_serverClient, hbMsg); } finally { _serverTxLock.Release(); }
                 } catch { }
-
-                int part = int.Parse(msg.Data["PART"]);
-                int total = int.Parse(msg.Data["TOTAL"]);
-
-                // Se o sensor ainda não tem buffer, OU se a nova imagem tem um tamanho diferente da que estava encravada...
-                if (!_videoBuffer.TryGetValue(msg.SID, out var chunks) || chunks.Length != total) {
-                    chunks = new byte[total][]; // Cria um novo espaço em branco
-                    _videoBuffer[msg.SID] = chunks; // Substitui o frame estragado pelo novo
-                }
-                chunks[part - 1] = msg.BinaryData;
-
-                // Console.WriteLine($"[DEBUG UDP] -> Guardei a parte {part} no buffer.");
-
-                _videoBufferTimestamps[msg.SID] = DateTime.Now;
-
-                // Verify if not all parts of the array are null already
-                if (chunks.All(c => c != null)) {
-                    byte[] fullImage = chunks.SelectMany(c => c).ToArray();
-
-                    // Guarda a imagem na RAM para o servidor web aceder sem bloqueios
-                    _latestFrames[msg.SID] = fullImage;
-
-                    // Tenta guardar no disco (com try-catch seguro para ignorar conflitos)
-                    string exactPath = Path.GetFullPath($"last_frame_{msg.SID}.jpg");
-                    try {
-                        await File.WriteAllBytesAsync(exactPath, fullImage);
-                    } catch (IOException) {
-                        // Ignora em silêncio se o Windows estiver com o ficheiro bloqueado
-                    }
-
-                    _videoBuffer.TryRemove(msg.SID, out _); // Limpa para a próxima
-                    _videoBufferTimestamps.TryRemove(msg.SID, out _);
-                }
             }
-        } catch (Exception ex) {
-            Console.WriteLine($"[ERROR] {ex.Message}");
         }
     }
 
-    // WEB SERVER LOGIC (LIVE FEED)
+    private static async Task SensorTimeoutMonitorRoutineAsync() {
+        while (true) {
+            await Task.Delay(5000); // Scans tracking context states every 5 seconds
+            bool stateChanged = false;
+
+            foreach (var sensor in _activeSensors) {
+                if ((DateTime.Now - sensor.Value).TotalSeconds > 30) {
+                    Console.WriteLine($"[TIMEOUT] No active communication events from {sensor.Key} for 30s. Setting offline.");
+                    _activeSensors.TryRemove(sensor.Key, out _);
+                    _config.UpdateSensorState(sensor.Key, "offline");
+                    stateChanged = true;
+                }
+            }
+            if (stateChanged) {
+                _config.SaveConfig();
+            }
+        }
+    }
+
+    private static async Task PerformGracefulShutdownAsync() {
+        Console.WriteLine("\n[SHUTDOWN] Terminating operations clean...");
+        if (_serverClient != null && _serverClient.Connected) {
+            try {
+                var byeMsg = new Message { CMD = "DISCONN", GID = GID, SID = "GATEWAY" };
+                await _serverTxLock.WaitAsync();
+                try { await Message.SendMessageAsync(_serverClient, byeMsg); } finally { _serverTxLock.Release(); }
+
+                await Task.Delay(500);
+                _serverClient.Close();
+            } catch { }
+        }
+        Console.WriteLine("[SHUTDOWN] Exiting complete.");
+        Environment.Exit(0);
+    }
+
     private static async Task StartWebServerAsync() {
-
         try {
-
             var listener = new HttpListener();
             listener.Prefixes.Add("http://localhost:8080/");
             listener.Start();
-            Console.WriteLine("[WEB] Web Server active. Ready to stream");
+            Console.WriteLine("[WEB SERVER] Edge HTTP Streaming service online on port 8080.");
 
             while (true) {
-
                 var context = await listener.GetContextAsync();
                 var req = context.Request;
                 var res = context.Response;
 
                 try {
-
                     if (req.Url.AbsolutePath.StartsWith("/stream/")) {
                         string sid = req.Url.AbsolutePath.Split('/').Last();
                         string html = $@"
                             <!DOCTYPE html>
                             <html>
                             <body style='background:#1e1e1e;color:white;text-align:center;font-family:Segoe UI,Arial;'>
-                                <h2>Live Feed UDP: {sid}</h2>
+                                <h2>Live Feed (RabbitMQ Core): {sid}</h2>
                                 <img id='feed' src='/image/{sid}' style='max-width:800px;border:3px solid #007acc;border-radius:10px;' />
                                 <p style='color:#00ff00;font-weight:bold;'>LIVE | 5 FPS</p>
                                 <script>
-                                    // Pede uma nova imagem ao Gateway a cada 200ms
                                     setInterval(() => document.getElementById('feed').src = '/image/{sid}?t=' + Date.now(), 200);
                                 </script>
                             </body>
                             </html>";
 
-
-                        byte[] buffer = System.Text.Encoding.UTF8.GetBytes(html);
+                        byte[] buffer = Encoding.UTF8.GetBytes(html);
                         res.ContentType = "text/html";
                         res.ContentLength64 = buffer.Length;
                         await res.OutputStream.WriteAsync(buffer, 0, buffer.Length);
                     }
                     else if (req.Url.AbsolutePath.StartsWith("/image/")) {
                         string sid = req.Url.AbsolutePath.Split('/').Last();
-                   
-
-                        // Read from RAM
                         if (_latestFrames.TryGetValue(sid, out byte[] imgBytes)) {
                             res.ContentType = "image/jpeg";
                             res.ContentLength64 = imgBytes.Length;
@@ -835,26 +396,12 @@ class Program {
                     else {
                         res.StatusCode = 404;
                     }
-
                 } finally {
                     res.Close();
                 }
             }
-
         } catch (Exception ex) {
-            Console.WriteLine($"[WEB ERROR] {ex.Message}");
-        }
-    }
-
-    private static bool IsAlertCondition(string dataType, double value) {
-        switch (dataType) {
-            case "TEMP": return value > 33.0;
-            case "HUM": return value > 78.0;
-            case "PM2": return value > 48.0;
-            case "CO2": return value > 995.0;
-            case "NOISE": return value > 88.0;
-            case "UV": return value > 9.0;
-            default: return false;
+            Console.WriteLine($"[WEB SERVER FAULT] Engine error: {ex.Message}");
         }
     }
 }

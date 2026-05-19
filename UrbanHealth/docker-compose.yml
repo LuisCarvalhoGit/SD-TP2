@@ -1,17 +1,72 @@
+networks:
+  urban-net:
+    driver: bridge
+
 services:
-  urban-health-server:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    networks:
+      - urban-net
+    
+  python-preprocess:
+    build: 
+      context: ./Services/PreProcessing
+    container_name: python-preprocess
+    networks:
+      - urban-net
+    
+  python-analysis:
+    build:
+      context: ./Services/Analysis
+    container_name: python-analysis
+    networks:
+      - urban-net
+
+  csharp-server: 
+    build: 
+      context: .
+      dockerfile: Server/Dockerfile
+    container_name: csharp-server
+    ports: 
+      - "5001:5001"
+      - "8081:8081"
+    volumes:
+      - "./database_data:/app/data"
+    environment:
+      - DB_PATH=/app/data/urbanhealth_central.db
+      - ANALYSIS_RPC_URL=http://python-analysis:50052
+    networks:
+      - urban-net
+    
+  csharp-gateway:
+    build: 
+      context: .
+      dockerfile: Gateway/Dockerfile
+    container_name: csharp-gateway
+    environment:
+      - RABBITMQ_HOST=rabbitmq
+      - SERVER_IP=csharp-server
+      - SERVER_PORT=5001
+      - PREPROCESS_RPC_URL=http://python-preprocess:50051
+    depends_on:
+      - rabbitmq
+      - csharp-server
+      - python-preprocess
+    networks:
+      - urban-net
+    
+  csharp-sensor:
     build:
       context: .
-      dockerfile: Dockerfile
-    container_name: urban-server-central
-    restart: always
-    ports:
-      - "5001:5001"       # Canal TCP para Gateways
-      - "5003:5003/udp"   # Canal UDP para Vídeo
-      - "8081:8081"       # Dashboard Web
-    volumes:
-      # Sincroniza a base de dados entre o PC e o contentor
-      - ./database_data:/app/data
+      dockerfile: Sensor/Dockerfile
+    container_name: csharp-sensor
     environment:
-      - ASPNETCORE_ENVIRONMENT=Production
-      - DB_PATH=/app/data/urbanhealth.db
+      - RABBITMQ_HOST=rabbitmq
+    depends_on:
+      - rabbitmq
+    networks:
+      - urban-net

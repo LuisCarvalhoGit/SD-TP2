@@ -1,224 +1,95 @@
 ﻿using System;
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using System.Runtime.CompilerServices;
 using System.Text.Json;
 using System.Threading.Tasks;
-using Server;
-using Shared; // Your common library
+using System.Collections.Generic;
+using Grpc.Net.Client;
+using Shared; // A biblioteca do vosso Message
+using Urbanhealth;
+using System.Text; // O namespace gerado pelo analysis.proto
 
 class Program {
-
-    private static UdpClient _udpListener;
-    private const int UdpPort = 5003;
-    private static ConcurrentDictionary<string, byte[][]> _videoBuffer = new();
-    private static ConcurrentDictionary<string, byte[]> _latestFrames = new();
-    private static ConcurrentDictionary<string, DateTime> _videoBufferTimestamps = new();
-
-
-    //private static StorageManager _storage = new StorageManager();
-    private static DataBaseManager _dbManager = new DataBaseManager();
-
-    // Registry of active gateways (GID -> Last Sync)
-    private static ConcurrentDictionary<string, DateTime> _activeGateways = new();
-
-    private static ConcurrentDictionary<string, string> _activeSensors = new();
-
+    private static DataBaseManager _db = new DataBaseManager();
+    private static AnalysisService.AnalysisServiceClient _rpcClient;
     static async Task Main(string[] args) {
-        int port = 5001;
-        var listener = new TcpListener(IPAddress.Any, port);
+        Console.WriteLine("[SYSTEM] Central Cloud Server Starting...");
+
+        // 1. Iniciar ligação gRPC ao Microserviço de Análise (Porta 50052)
+        string rpcUrl = Environment.GetEnvironmentVariable("ANALYSIS_RPC_URL") ?? "http://localhost:50052";
+        var channel = GrpcChannel.ForAddress(rpcUrl);
+        _rpcClient = new AnalysisService.AnalysisServiceClient(channel);
+        Console.WriteLine("[RPC] Connection active with Analysis Engine on port 50052.");
+
+        // 2. Iniciar rotinas em paralelo
+        _ = Task.Run(StartGatewayTcpListenerAsync);
+        await StartWebDashboardApiAsync();
+    }
+
+    // ==========================================================
+    // 1. EDGE-TO-CLOUD LISTENER (Recebe os dados do Gateway)
+    // ==========================================================
+    private static async Task StartGatewayTcpListenerAsync() {
+        var listener = new TcpListener(IPAddress.Any, 5001);
         listener.Start();
-
-        Console.WriteLine($"[SERVER] Listening on port {port}");
-
-        // starts cleaning routine of dead gateways
-        _ = Task.Run(MonitorGatewaysAsync);
-
-
-        // Turn on UDP receptor and Web Server Dashboard
-        _udpListener = new UdpClient(UdpPort);
-        _ = Task.Run(ListenForVideoUdpAsync);
-        _ = Task.Run(StartWebDashboardAsync);
+        Console.WriteLine("[TCP] Listening for Gateway connections on port 5001...");
 
         while (true) {
-            // Waits for a Gateway to connect
-            var client = await listener.AcceptTcpClientAsync();
-            Console.WriteLine("[SERVER] New connection detected (Gateway)!");
-
-            _ = Task.Run(() => HandleGatewayAsync(client));
-        }
-    }
-
-    private static async Task MonitorGatewaysAsync() {
-
-        while (true) {
-
-            await Task.Delay(2000); // every 2 sec
-
-            foreach (var gw in _activeGateways) {
-
-                // if more than 30 secs passed since last HB
-                if ((DateTime.Now - gw.Value).TotalSeconds > 30) {
-                    Console.WriteLine($"[TIMEOUT] Gateway {gw.Key} lost connection. ");
-                    _activeGateways.TryRemove(gw.Key, out _);
-
-                    // we can implement some kind of external "alert" here
-                }
-            }
-
-            // Garbage collector for UDP Video
-            foreach (var frameTime in _videoBufferTimestamps) {
-                if ((DateTime.Now - frameTime.Value).TotalSeconds > 1.5) {
-                    _videoBuffer.TryRemove(frameTime.Key, out _);
-                    _videoBufferTimestamps.TryRemove(frameTime.Key, out _);
-                }
-            }
-        }
-    }
-
-    private static async Task HandleGatewayAsync(TcpClient client) {
-        using (client) {
-            string gatewayId = "Unknown";
             try {
-                while (true) {
-                    var msg = await Message.ReceiveMessageAsync(client);
+                var client = await listener.AcceptTcpClientAsync();
+                _ = Task.Run(() => HandleGatewayClientAsync(client));
+            } catch (Exception ex) {
+                Console.WriteLine($"[TCP ERROR] {ex.Message}");
+            }
+        }
+    }
 
-                    if (msg == null) {
-                        Console.WriteLine("[SERVER] The Gateway disconnected.");
-                        break;
-                    }
+    private static async Task HandleGatewayClientAsync(TcpClient client) {
+        string endPoint = client.Client.RemoteEndPoint.ToString();
+        Console.WriteLine($"[TCP] Gateway connected from {endPoint}");
 
-                    gatewayId = msg.GID;
+        try {
+            while (client.Connected) {
+                var msg = await Message.ReceiveMessageAsync(client);
+                if (msg == null) break;
 
-                    _activeGateways[gatewayId] = DateTime.Now;
+                if (msg.CMD == "FWD" && msg.Data.ContainsKey("RAW_PAYLOAD")) {
+                    string sensorId = msg.SID;
+                    string dataType = msg.Data["TYPE"];
+                    string rawJson = msg.Data["RAW_PAYLOAD"];
 
-                    // Prints the received command with emphasis
-                    Console.WriteLine($"\n[RECEIVED] Command: {msg.CMD} | GID: {msg.GID}");
+                    var payloadList = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(rawJson);
 
-                    
-                    if (msg.CMD == "STS") {
-                        Console.WriteLine($"   -> Status Message: {msg.Data["STATUS"]} | SID: {msg.SID}");
+                    if (payloadList != null) {
+                        foreach (var item in payloadList) {
+                            if (DateTime.TryParse(item["Timestamp"], null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime ts) &&
+                                double.TryParse(item["Value"], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val)) {
 
-                        // Only process sensor status messages (not gateway status messages)
-                        if (!string.IsNullOrEmpty(msg.SID) && msg.SID != msg.GID) {
-                            Console.WriteLine($"[STATUS] Sensor {msg.SID} state: {msg.Data["STATUS"]}");
-                            if (msg.Data["STATUS"] == "ONLINE") _activeSensors[msg.SID] = msg.GID;
-                            else if (msg.Data["STATUS"] == "OFFLINE") _activeSensors.TryRemove(msg.SID, out _);
-                        }
-                    }
-                    else if (msg.CMD == "FWD") {
-
-                        Console.WriteLine($"\n   -> [BATCHING] Gateway {msg.GID} sent batch of data from Sensor: {msg.SID}");
-                        Console.WriteLine($"   -> Zone: {msg.Data.GetValueOrDefault("ZONE", "N/A")} | Type: {msg.Data["TYPE"]}");
-                        Console.WriteLine($"   -> Total of readings: {msg.Data["BATCH_COUNT"]}");
-
-                        // Extract and convert JSON back to list
-                        string rawPayloadJson = msg.Data["RAW_PAYLOAD"];
-                        var rawReadings = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(rawPayloadJson);
-
-                        if (rawReadings != null) {
-                            foreach (var reading in rawReadings) {
-                                // Clone message
-                                var individualMsg = new Message {
-                                    CMD = "FWD",
-                                    SID = msg.SID,
-                                    GID = msg.GID,
-                                    Timestamp = reading["Timestamp"] // Restore original timestamp
-                                };
-                                individualMsg.Data["TYPE"] = msg.Data["TYPE"];
-                                individualMsg.Data["ZONE"] = msg.Data["ZONE"];
-                                individualMsg.Data["VALUE"] = reading["Value"];
-
-                                await _dbManager.SaveReadingsAsync(individualMsg);
+                                _db.SaveReading(sensorId, dataType, val, ts);
                             }
                         }
-                    }
-                    else if (msg.CMD == "FWD_STRM" && msg.Data.GetValueOrDefault("ACTION", "") == "START") {
-                        Console.WriteLine($"\n   -> [STREAM] Gateway {msg.GID} forwarded a video from Sensor {msg.SID}!");
-
-                        Console.ForegroundColor = ConsoleColor.Red;
-                        Console.WriteLine($"   -> Live: http://localhost:8081/stream/{msg.SID}");
-                        Console.ResetColor();
-                    }
-                    else if (msg.CMD == "DISCONN") {
-                        if (msg.SID == "GATEWAY") {
-                            Console.WriteLine($"\n   -> [SHUTDOWN] Gateway {msg.GID} has shutdown his activity in a clean way..");
-                            if (gatewayId != "Unknown") _activeGateways.TryRemove(gatewayId, out _);
-                            break;
-                        }
-                        else {
-                            // Sensor disconnection
-                            Console.WriteLine($"   -> [DISCONNECT] Sensor {msg.SID} disconnected from Gateway {msg.GID}");
-                            _activeSensors.TryRemove(msg.SID, out _);
-                        }
-                    }
-                    else if (msg.CMD == "HB") {
-                        // if you want to see HB on the console just uncomment
-                        // Console.WriteLine($"[HB] Gateway {msg.GID} is alive.");
+                        Console.WriteLine($"[CLOUD] Saved {payloadList.Count} '{dataType}' metrics from {sensorId} to database.");
                     }
                 }
-            } catch (Exception ex) {
-                Console.WriteLine($"[ERROR] Failure in communication with Gateway {gatewayId}: {ex.Message}");
-                if (gatewayId != "Unknown") _activeGateways.TryRemove(gatewayId, out _);
             }
+        } catch (Exception) { } finally {
+            client.Close();
+            Console.WriteLine($"[TCP] Gateway {endPoint} disconnected.");
         }
     }
 
-    private static async Task ListenForVideoUdpAsync() {
-        Console.WriteLine($"[SERVER-VIDEO] UDP Listener active on port {UdpPort}...");
-        try {
-            while (true) {
-                var result = await _udpListener.ReceiveAsync();
-                var msg = Message.FromUdpBytes(result.Buffer);
+    // ==========================================================
+    // 2. WEB API (Interface para o utilizador contactar o Python)
+    // ==========================================================
+    private static async Task StartWebDashboardApiAsync() {
+        var listener = new HttpListener();
+        listener.Prefixes.Add("http://+:8081/");
+        listener.Start();
+        Console.WriteLine("[WEB] REST API Dashboard running on port 8081.");
 
-                if (msg == null) continue;
-
-                int part = int.Parse(msg.Data["PART"]);
-                int total = int.Parse(msg.Data["TOTAL"]);
-
-                if (!_videoBuffer.TryGetValue(msg.SID, out var chunks) || chunks.Length != total) {
-                    chunks = new byte[total][];
-                    _videoBuffer[msg.SID] = chunks;
-                }
-                chunks[part - 1] = msg.BinaryData;
-
-                _videoBufferTimestamps[msg.SID] = DateTime.Now;
-
-                // If got all pieces, store in server RAM
-                if (chunks.All(c => c != null)) {
-                    byte[] fullImage = chunks.SelectMany(c => c).ToArray();
-                    _latestFrames[msg.SID] = fullImage;
-                    _videoBuffer.TryRemove(msg.SID, out _);
-                    _videoBufferTimestamps.TryRemove(msg.SID, out _);
-                }
-            }
-        } catch (Exception ex) {
-            Console.WriteLine($"[SERVER-VIDEO ERROR] {ex.Message}");
-        }
-    }
-
-    private static async Task StartWebDashboardAsync() {
-        try {
-            var listener = new HttpListener();
-
-            // Se estivermos no Docker, usamos *, se estivermos no Windows local, usamos localhost
-            if (Environment.GetEnvironmentVariable("DOTNET_RUNNING_IN_CONTAINER") == "true") {
-                listener.Prefixes.Add("http://*:8081/");
-            }
-            else {
-                listener.Prefixes.Add("http://localhost:8081/");
-            }
-
-            listener.Start();
-            Console.WriteLine($"[WEB] Dashboard Ready: http://localhost:8081/");
-
-            while (true) {
-                var context = await listener.GetContextAsync();
-                _ = Task.Run(() => HandleWebRequestAsync(context));
-            }
-        } catch (Exception ex) {
-            Console.WriteLine($"[WEB ERROR] {ex.Message}");
+        while (true) {
+            var context = await listener.GetContextAsync();
+            _ = Task.Run(() => HandleWebRequestAsync(context));
         }
     }
 
@@ -226,70 +97,100 @@ class Program {
         var req = context.Request;
         var res = context.Response;
 
-        try {
-            res.AppendHeader("Access-Control-Allow-Origin", "*");
-            string path = req.Url.AbsolutePath;
+        // CORS Setup para permitir chamadas via AJAX do frontend
+        res.AppendHeader("Access-Control-Allow-Origin", "*");
 
-            if (path == "/" || path == "/index.html") {
-                string filePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "index.html");
-                byte[] content = File.Exists(filePath) ? await File.ReadAllBytesAsync(filePath) : System.Text.Encoding.UTF8.GetBytes("<h1>index.html not found!</h1>");
+        try {
+
+            if (req.Url.AbsolutePath == "/" || req.Url.AbsolutePath.ToLower() == "/index.html") {
+            // Ajusta "index.html" para o nome exato do teu ficheiro
+            string filePath = Path.Combine(Directory.GetCurrentDirectory(), "index.html"); 
+            
+            if (File.Exists(filePath)) {
+                byte[] htmlBytes = await File.ReadAllBytesAsync(filePath);
                 res.ContentType = "text/html";
-                await res.OutputStream.WriteAsync(content, 0, content.Length);
+                res.ContentLength64 = htmlBytes.Length;
+                await res.OutputStream.WriteAsync(htmlBytes, 0, htmlBytes.Length);
+            } else {
+                res.StatusCode = 404;
+                var notFound = Encoding.UTF8.GetBytes("Dashboard file not found.");
+                await res.OutputStream.WriteAsync(notFound, 0, notFound.Length);
             }
-            else if (path == "/api/status") {
-                var status = new {
-                    gatewaysOnline = _activeGateways.Keys.ToList(),
-                    activeSensors = _activeSensors.Select(s => new { Sensor = s.Key, Gateway = s.Value }).ToList(),
-                    readings = JsonSerializer.Deserialize<JsonElement>(await _dbManager.GetRecentReadingsJsonAsync(50))
-                };
-                byte[] json = JsonSerializer.SerializeToUtf8Bytes(status);
-                res.ContentType = "application/json";
-                await res.OutputStream.WriteAsync(json, 0, json.Length);
-            }
-            else if (path == "/api/zones") {
-                string json = await _dbManager.GetAvailableZonesJsonAsync();
-                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(json);
-                res.ContentType = "application/json";
-                await res.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-            }
-            else if (path == "/api/types") {
-                string json = await _dbManager.GetAvailableTypesJsonAsync();
-                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(json);
-                res.ContentType = "application/json";
-                await res.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-            }
-            else if (path.StartsWith("/api/sensors")) {
-                var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
-                string json = await _dbManager.GetAvailableSensorsJsonAsync(query["zone"], query["type"]);
-                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(json);
-                res.ContentType = "application/json";
-                await res.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-            }
-            else if (path.StartsWith("/api/stats")) {
-                var query = System.Web.HttpUtility.ParseQueryString(req.Url.Query);
-                string json = await _dbManager.GetStatisticsJsonAsync(query["zone"], query["type"], query["sensor"]);
-                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(json);
-                res.ContentType = "application/json";
-                await res.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-            }
-            else if (path.StartsWith("/stream/")) {
-                string sid = path.Split('/').Last();
-                string html = $"<html><body style='background:#000;color:#0f0;text-align:center;'><h2>Stream: {sid}</h2><img id='f' src='/image/{sid}' style='max-width:800px;'/><script>setInterval(()=>document.getElementById('f').src='/image/{sid}?'+Date.now(),200);</script></body></html>";
-                byte[] buffer = System.Text.Encoding.UTF8.GetBytes(html);
-                res.ContentType = "text/html";
-                await res.OutputStream.WriteAsync(buffer, 0, buffer.Length);
-            }
-            else if (path.StartsWith("/image/")) {
-                string sid = path.Split('/').Last();
-                if (_latestFrames.TryGetValue(sid, out byte[] img)) {
-                    res.ContentType = "image/jpeg";
-                    await res.OutputStream.WriteAsync(img, 0, img.Length);
+            res.Close();
+            return; // Sai da função para não executar a parte do Python
+        }
+            // Rota da Fase 3: Pedir Análise a um Sensor (ex: /api/analyze/S101/PM2)
+            if (req.Url.AbsolutePath.StartsWith("/api/analyze/")) {
+                var parts = req.Url.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);
+
+                if (parts.Length >= 3) {
+                    string sensorId = parts[2];
+                    string dataType = parts.Length > 3 ? parts[3].ToUpper() : "ALL";
+
+                    Console.WriteLine($"[WEB] User requested formal analysis for {sensorId} [{dataType}]");
+
+                    // 1. Extrair os dados reais da base de dados do C# (ex: últimos 7 dias)
+                    DateTime endTime = DateTime.Now;
+                    DateTime startTime = endTime.AddDays(-7);
+                    var databaseRows = _db.GetHistoricalReadings(sensorId, dataType, startTime, endTime);
+
+                    // 2. Construir a nova mensagem protobuf (Stateless)
+                    var rpcReq = new AnalysisRequest {
+                        SensorId = sensorId,
+                        DataType = dataType
+                    };
+
+                    // 3. Injetar as leituras em memória no pedido gRPC
+                    foreach (var row in databaseRows) {
+                        rpcReq.Readings.Add(new Reading {
+                            Timestamp = row.Timestamp.ToString("o"),
+                            Value = row.Value
+                        });
+                    }
+
+                    Console.WriteLine($"[RPC OUT] Dispatching {databaseRows.Count} rows to Python Stateless Engine...");
+
+                    // 4. Chamada ao Microserviço Python!
+                    var rpcRes = await _rpcClient.AnalyzeDataAsync(rpcReq);
+
+                    if (rpcRes.Success) {
+                        // Persistir os resultados do Python na BD do C#
+                        _db.SaveAnalysisReport(
+                            sensorId, dataType, rpcRes.SampleCount,
+                            rpcRes.MeanValue, rpcRes.MaxValue, rpcRes.MinValue, rpcRes.RiskPattern
+                        );
+
+                        // Devolver a resposta limpa ao browser (com formatação correta para acentos)
+                        var jsonResponse = JsonSerializer.Serialize(new {
+                            Status = "Success",
+                            SensorId = sensorId,
+                            DataType = dataType,
+                            Evaluation = rpcRes.RiskPattern,
+                            Statistics = new {
+                                ProcessedSamples = rpcRes.SampleCount,
+                                Mean = rpcRes.MeanValue,
+                                Max = rpcRes.MaxValue,
+                                Min = rpcRes.MinValue
+                            },
+                            MicroserviceMessage = rpcRes.Message
+                        }, new JsonSerializerOptions {
+                            WriteIndented = true,
+                            Encoder = System.Text.Encodings.Web.JavaScriptEncoder.UnsafeRelaxedJsonEscaping
+                        });
+
+                        byte[] bytes = System.Text.Encoding.UTF8.GetBytes(jsonResponse);
+                        res.ContentType = "application/json";
+                        res.ContentLength64 = bytes.Length;
+                        await res.OutputStream.WriteAsync(bytes, 0, bytes.Length);
+                        return;
+                    }
                 }
-                else { res.StatusCode = 404; }
             }
-            else { res.StatusCode = 404; }
+
+            res.StatusCode = 404; // Not Found
         } catch (Exception ex) {
-            Console.WriteLine($"[WEB ERROR] Request: {ex.Message}");
+            Console.WriteLine($"[WEB ERROR] API Failure: {ex.Message}");
+            res.StatusCode = 500;
         } finally {
             res.Close();
         }

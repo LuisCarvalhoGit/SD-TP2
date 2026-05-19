@@ -1,0 +1,30 @@
+syntax = "proto3";
+
+package urbanhealth;
+
+service AnalysisService {
+  rpc AnalyzeData (AnalysisRequest) returns (AnalysisResponse);
+}
+
+// Struct representing a single telemetry record
+message Reading {
+  string timestamp = 1;
+  double value = 2;
+}
+
+// The stateless request passing the raw history array directly
+message AnalysisRequest {
+  string sensor_id = 1;
+  string data_type = 2;
+  repeated Reading readings = 3; // Ephemeral data collection passed in-memory
+}
+
+message AnalysisResponse {
+  bool success = 1;
+  int32 sample_count = 2;
+  double mean_value = 3;
+  double max_value = 4;
+  double min_value = 5;
+  string risk_pattern = 6;
+  string message = 7;
+}
