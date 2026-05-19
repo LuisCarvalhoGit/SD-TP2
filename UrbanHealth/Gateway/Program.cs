@@ -1,9 +1,11 @@
-﻿using System.Collections.Concurrent;
+﻿using Gateway;
+using Grpc.Net.Client;
+using Shared;
+using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Sockets;
-using Gateway;
-using Shared;
 using System.Text.Json;
+using Urbanhealth; // O nome que demos no "package" do ficheiro .proto
 
 class Program {
     private static TcpListener _listener;
@@ -53,6 +55,9 @@ class Program {
     private static readonly Random _rnd = new Random();
 
     private static LocalCacheManager _cache = new LocalCacheManager();
+
+    private static readonly GrpcChannel _grpcChannel = GrpcChannel.ForAddress("http://localhost:50051");
+    private static readonly PreProcessingService.PreProcessingServiceClient _rpcClient = new PreProcessingService.PreProcessingServiceClient(_grpcChannel);
 
     static async Task Main(string[] args) {
         _config.LoadConfig();

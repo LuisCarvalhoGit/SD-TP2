@@ -1,0 +1,23 @@
+syntax = "proto3";
+
+// O namespace que vai ser gerado no C#
+package urbanhealth;
+
+// Definição do Serviço
+service PreProcessingService {
+  rpc ProcessData (DataRequest) returns (DataResponse);
+}
+
+// O que o Gateway envia
+message DataRequest {
+  string sensor_id = 1;
+  string data_type = 2;
+  double raw_value = 3;
+}
+
+// O que o Python responde
+message DataResponse {
+  bool success = 1;
+  double processed_value = 2;
+  string message = 3;
+}
