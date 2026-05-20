@@ -108,4 +108,42 @@ public class DataBaseManager {
         }
         return readings;
     }
+
+    public List<object> GetRecentReadings(int limit = 20)
+    {
+        var readingsList = new List<object>();
+        using (var connection = new SqliteConnection(_connectionString))
+        {
+            connection.Open();
+            var command = connection.CreateCommand();
+            
+            // Usamos os nomes REAIS das colunas da tua tabela SensorReadings
+            command.CommandText = "SELECT Timestamp, SensorId, DataType, Value FROM SensorReadings ORDER BY Timestamp DESC LIMIT @limit";
+            command.Parameters.AddWithValue("@limit", limit);
+            
+            using (var reader = command.ExecuteReader())
+            {
+                while (reader.Read())
+                {
+                    // Lemos os dados corretos da BD
+                    DateTime ts = reader.GetDateTime(0);
+                    string sensorId = reader.GetString(1);
+                    string dataType = reader.GetString(2);
+                    double val = reader.GetDouble(3);
+
+                    // Mapeamos para o formato que a Dashboard Web espera
+                    readingsList.Add(new {
+                        Time = ts.ToString("o"), // Formato ISO 8601 para o JavaScript não se perder
+                        Sensor = sensorId,
+                        Zone = "Campus UTAD",    // Valor mockado (já que não guardas a zona na BD)
+                        Type = dataType,
+                        Value = val.ToString("0.0"), // Formata o double com 1 casa decimal
+                        Gateway = "G101"         // Valor mockado (já que não guardas o GW na BD)
+                    });
+                }
+            }
+        }
+        return readingsList;
+    }
+
 }

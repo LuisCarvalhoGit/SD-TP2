@@ -7,8 +7,12 @@ services:
     image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${PORT_RABBITMQ:-5672}:5672"
+      - "${PORT_RABBITMQ_WEB:-15672}:15672"
+    # O RabbitMQ usa nomes de variáveis diferentes, por isso mapeamos a partir do .env
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
     networks:
       - urban-net
     
@@ -16,6 +20,10 @@ services:
     build: 
       context: ./Services/PreProcessing
     container_name: python-preprocess
+    env_file: 
+      - .env
+    ports:
+      - "${PORT_PYTHON_PRE:-50051}:50051"
     networks:
       - urban-net
     
@@ -23,6 +31,10 @@ services:
     build:
       context: ./Services/Analysis
     container_name: python-analysis
+    env_file: 
+      - .env
+    ports:
+      - "${PORT_PYTHON_ANALY:-50052}:50052"
     networks:
       - urban-net
 
@@ -31,14 +43,15 @@ services:
       context: .
       dockerfile: Server/Dockerfile
     container_name: csharp-server
+    env_file: 
+      - .env
     ports: 
-      - "5001:5001"
-      - "8081:8081"
+      - "${PORT_SERVER_TCP:-5001}:5001"
+      - "${PORT_DASHBOARD:-8081}:8081"
     volumes:
       - "./database_data:/app/data"
-    environment:
-      - DB_PATH=/app/data/urbanhealth_central.db
-      - ANALYSIS_RPC_URL=http://python-analysis:50052
+    depends_on:
+      - python-analysis
     networks:
       - urban-net
     
@@ -47,11 +60,10 @@ services:
       context: .
       dockerfile: Gateway/Dockerfile
     container_name: csharp-gateway
-    environment:
-      - RABBITMQ_HOST=rabbitmq
-      - SERVER_IP=csharp-server
-      - SERVER_PORT=5001
-      - PREPROCESS_RPC_URL=http://python-preprocess:50051
+    env_file: 
+      - .env
+    volumes:
+      - ./Gateway/sensores.csv:/app/sensores.csv
     depends_on:
       - rabbitmq
       - csharp-server
@@ -64,8 +76,10 @@ services:
       context: .
       dockerfile: Sensor/Dockerfile
     container_name: csharp-sensor
-    environment:
-      - RABBITMQ_HOST=rabbitmq
+    env_file: 
+      - .env
+    stdin_open: true
+    tty: true
     depends_on:
       - rabbitmq
     networks:

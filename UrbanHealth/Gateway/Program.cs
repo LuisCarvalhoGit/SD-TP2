@@ -28,8 +28,9 @@ public class SensorPayload {
 class Program {
     // Gateway Configuration Variables
     private static readonly string GID = Environment.GetEnvironmentVariable("GATEWAY_ID") ?? "G101";
-    private static readonly string ServerIP = Environment.GetEnvironmentVariable("SERVER_IP") ?? "127.0.0.1";
-    private static readonly int ServerPort = int.TryParse(Environment.GetEnvironmentVariable("SERVER_PORT"), out int sp) ? sp : 5001;
+    private static readonly string RawServerIp = Environment.GetEnvironmentVariable("SERVER_IP") ?? "127.0.0.1";
+    private static readonly IPAddress ServerIp = System.Net.Dns.GetHostAddresses(RawServerIp)[0]; 
+    private static readonly int ServerPort = int.Parse(Environment.GetEnvironmentVariable("SERVER_PORT") ?? "5001");
 
     // Upstream Cloud Server Connection
     private static TcpClient _serverClient;
@@ -87,15 +88,18 @@ class Program {
     }
 
     private static void StartRabbitMQConsumer() {
-        var rabbitHost = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost";
-        var factory = new ConnectionFactory() { HostName = rabbitHost, AutomaticRecoveryEnabled = true };
+        var factory = new ConnectionFactory() {
+        HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+        UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
+        Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest"
+    };
 
-        int maxRetries = 10;
+        int maxRetries = 20;
         int delayMs = 3000;
 
         for (int i = 1; i <= maxRetries; i++) {
             try {
-                Console.WriteLine($"[RABBITMQ] Gateway attempting to connect to {rabbitHost}... (Attempt {i}/{maxRetries})");
+                Console.WriteLine($"[RABBITMQ] Gateway attempting to connect to {factory.HostName}... (Attempt {i}/{maxRetries})");
                 
                 var connection = factory.CreateConnection();
                 var channel = connection.CreateModel();
@@ -275,9 +279,9 @@ class Program {
         while (true) {
             try {
                 _serverClient = new TcpClient();
-                Console.WriteLine($"[UPSTREAM] Connecting to Central Cloud Server ({ServerIP}:{ServerPort})...");
+                Console.WriteLine($"[UPSTREAM] Connecting to Central Cloud Server ({ServerIp}:{ServerPort})...");
 
-                await _serverClient.ConnectAsync(ServerIP, ServerPort);
+                await _serverClient.ConnectAsync(ServerIp, ServerPort);
                 Console.WriteLine("[UPSTREAM] Connection established with Cloud Server!");
                 currentDelayMs = baseDelayMs;
 

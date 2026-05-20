@@ -87,17 +87,20 @@ class Program {
     }
 
     private static void InitRabbitMQ() {
-        var rabbitHost = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost";
-        var factory = new ConnectionFactory() { HostName = rabbitHost, AutomaticRecoveryEnabled = true };
+        var factory = new ConnectionFactory() {
+            HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+            UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
+            Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest"
+        };
 
-        int maxRetries = 10;
+        int maxRetries = 20;
         int delayMs = 3000;
 
         for (int i = 0; i <= maxRetries; i++)
         {
             try
             {
-                Console.WriteLine($"[RABBITMQ] Attempting to connect to {rabbitHost}... (Attempt {i}/{maxRetries})");
+                Console.WriteLine($"[RABBITMQ] Attempting to connect to {factory.HostName}... (Attempt {i}/{maxRetries})");
                 
                 _rmqConnection = factory.CreateConnection();
                 _channel = _rmqConnection.CreateModel();

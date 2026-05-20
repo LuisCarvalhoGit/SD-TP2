@@ -7,7 +7,8 @@ using System.Collections.Generic;
 using Grpc.Net.Client;
 using Shared; // A biblioteca do vosso Message
 using Urbanhealth;
-using System.Text; // O namespace gerado pelo analysis.proto
+using System.Text;
+using Microsoft.Data.Sqlite; // O namespace gerado pelo analysis.proto
 
 class Program {
     private static DataBaseManager _db = new DataBaseManager();
@@ -103,22 +104,50 @@ class Program {
         try {
 
             if (req.Url.AbsolutePath == "/" || req.Url.AbsolutePath.ToLower() == "/index.html") {
-            // Ajusta "index.html" para o nome exato do teu ficheiro
-            string filePath = Path.Combine(Directory.GetCurrentDirectory(), "index.html"); 
-            
-            if (File.Exists(filePath)) {
-                byte[] htmlBytes = await File.ReadAllBytesAsync(filePath);
-                res.ContentType = "text/html";
-                res.ContentLength64 = htmlBytes.Length;
-                await res.OutputStream.WriteAsync(htmlBytes, 0, htmlBytes.Length);
-            } else {
-                res.StatusCode = 404;
-                var notFound = Encoding.UTF8.GetBytes("Dashboard file not found.");
-                await res.OutputStream.WriteAsync(notFound, 0, notFound.Length);
+                // Ajusta "index.html" para o nome exato do teu ficheiro
+                string filePath = Path.Combine(Directory.GetCurrentDirectory(), "index.html"); 
+                
+                if (File.Exists(filePath)) {
+                    byte[] htmlBytes = await File.ReadAllBytesAsync(filePath);
+                    res.ContentType = "text/html";
+                    res.ContentLength64 = htmlBytes.Length;
+                    await res.OutputStream.WriteAsync(htmlBytes, 0, htmlBytes.Length);
+                } else {
+                    res.StatusCode = 404;
+                    var notFound = Encoding.UTF8.GetBytes("Dashboard file not found.");
+                    await res.OutputStream.WriteAsync(notFound, 0, notFound.Length);
+                }
+                res.Close();
+                return; // Sai da função para não executar a parte do Python
             }
-            res.Close();
-            return; // Sai da função para não executar a parte do Python
-        }
+
+            if (req.Url.AbsolutePath.ToLower() == "/api/status") {
+                try {
+                    // Usa a tua abstração como deve ser!
+                    var readingsList = _db.GetRecentReadings(20);
+
+                    var statusData = new {
+                        gatewaysOnline = new string[] { "G101" },
+                        activeSensors = readingsList.Select(r => new { Sensor = ((dynamic)r).Sensor, Gateway = ((dynamic)r).Gateway }).Distinct().ToArray(),
+                        readings = readingsList
+                    };
+
+                    string jsonResponse = JsonSerializer.Serialize(statusData);
+                    byte[] buffer = Encoding.UTF8.GetBytes(jsonResponse);
+                    
+                    res.ContentType = "application/json";
+                    res.ContentLength64 = buffer.Length;
+                    await res.OutputStream.WriteAsync(buffer, 0, buffer.Length);
+                    
+                } catch (Exception ex) {
+                    Console.WriteLine($"[API ERROR] Falha no status: {ex.Message}");
+                    res.StatusCode = 500;
+                } finally {
+                    res.Close();
+                }
+                return;
+            }
+
             // Rota da Fase 3: Pedir Análise a um Sensor (ex: /api/analyze/S101/PM2)
             if (req.Url.AbsolutePath.StartsWith("/api/analyze/")) {
                 var parts = req.Url.AbsolutePath.Split('/', StringSplitOptions.RemoveEmptyEntries);

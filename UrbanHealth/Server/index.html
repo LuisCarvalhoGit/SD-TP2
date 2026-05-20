@@ -31,342 +31,68 @@
         }
 
         /* SIDEBAR */
-        .sidebar {
-            width: 250px;
-            background-color: var(--bg-panel);
-            border-right: 1px solid var(--bg-hover);
-            display: flex;
-            flex-direction: column;
-        }
-
-        .sidebar-header {
-            padding: 20px;
-            text-align: center;
-            border-bottom: 1px solid var(--bg-hover);
-        }
-
-            .sidebar-header h2 {
-                margin: 0;
-                color: var(--accent-primary);
-                font-size: 22px;
-            }
-
-            .sidebar-header p {
-                margin: 5px 0 0;
-                font-size: 12px;
-                color: var(--text-muted);
-            }
-
-        .nav-menu {
-            list-style: none;
-            padding: 0;
-            margin: 20px 0;
-        }
-
-        .nav-item {
-            padding: 15px 25px;
-            cursor: pointer;
-            font-weight: 600;
-            display: flex;
-            align-items: center;
-            gap: 10px;
-            transition: all 0.2s;
-            color: var(--text-muted);
-        }
-
-            .nav-item:hover, .nav-item.active {
-                background-color: var(--bg-hover);
-                color: var(--text-main);
-                border-left: 4px solid var(--accent-primary);
-            }
+        .sidebar { width: 250px; background-color: var(--bg-panel); border-right: 1px solid var(--bg-hover); display: flex; flex-direction: column; }
+        .sidebar-header { padding: 20px; text-align: center; border-bottom: 1px solid var(--bg-hover); }
+        .sidebar-header h2 { margin: 0; color: var(--accent-primary); font-size: 22px; }
+        .sidebar-header p { margin: 5px 0 0; font-size: 12px; color: var(--text-muted); }
+        .nav-menu { list-style: none; padding: 0; margin: 20px 0; }
+        .nav-item { padding: 15px 25px; cursor: pointer; font-weight: 600; display: flex; align-items: center; gap: 10px; transition: all 0.2s; color: var(--text-muted); }
+        .nav-item:hover, .nav-item.active { background-color: var(--bg-hover); color: var(--text-main); border-left: 4px solid var(--accent-primary); }
 
         /* MAIN */
-        .main-content {
-            flex: 1;
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-        }
+        .main-content { flex: 1; display: flex; flex-direction: column; overflow-y: auto; }
+        .topbar { background-color: var(--bg-panel); padding: 15px 30px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--bg-hover); }
+        .tab-pane { display: none; padding: 30px; }
+        .tab-pane.active { display: block; animation: fadeIn 0.3s ease; }
 
-        .topbar {
-            background-color: var(--bg-panel);
-            padding: 15px 30px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--bg-hover);
-        }
-
-        .tab-pane {
-            display: none;
-            padding: 30px;
-        }
-
-            .tab-pane.active {
-                display: block;
-                animation: fadeIn 0.3s ease;
-            }
-
-        @keyframes fadeIn {
-            from {
-                opacity: 0;
-                transform: translateY(10px);
-            }
-
-            to {
-                opacity: 1;
-                transform: translateY(0);
-            }
-        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
 
         /* CARDS */
-        .cards {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
-            gap: 20px;
-            margin-bottom: 30px;
-        }
-
-        .card {
-            background: var(--bg-panel);
-            padding: 25px;
-            border-radius: 10px;
-            border-top: 4px solid var(--accent-primary);
-            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-        }
-
-            .card h3 {
-                margin: 0;
-                color: var(--text-muted);
-                font-size: 13px;
-                text-transform: uppercase;
-            }
-
-            .card p {
-                margin: 15px 0 0;
-                font-size: 36px;
-                font-weight: bold;
-                color: var(--text-main);
-            }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin-bottom: 30px; }
+        .card { background: var(--bg-panel); padding: 25px; border-radius: 10px; border-top: 4px solid var(--accent-primary); box-shadow: 0 8px 16px rgba(0,0,0,0.2); }
+        .card h3 { margin: 0; color: var(--text-muted); font-size: 13px; text-transform: uppercase; }
+        .card p { margin: 15px 0 0; font-size: 36px; font-weight: bold; color: var(--text-main); }
 
         /* TABLE */
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            background: var(--bg-panel);
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 8px 16px rgba(0,0,0,0.2);
-        }
-
-        th, td {
-            padding: 18px;
-            text-align: left;
-            border-bottom: 1px solid var(--bg-hover);
-        }
-
-        th {
-            background-color: rgba(0,172,193,0.1);
-            color: var(--accent-primary);
-            text-transform: uppercase;
-            font-size: 13px;
-        }
-
-        tr:hover {
-            background-color: var(--bg-hover);
-        }
-
-        .badge {
-            background: #333;
-            padding: 6px 12px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 12px;
-            color: var(--warning);
-        }
-
-        .val-high {
-            color: var(--danger);
-            font-weight: bold;
-        }
-
-        .val-normal {
-            color: var(--success);
-            font-weight: bold;
-        }
-
-        .btn-detail {
-            background: var(--accent-primary);
-            color: white;
-            border: none;
-            padding: 8px 15px;
-            border-radius: 5px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-            .btn-detail:hover {
-                background: var(--accent-secondary);
-            }
+        table { width: 100%; border-collapse: collapse; background: var(--bg-panel); border-radius: 10px; overflow: hidden; box-shadow: 0 8px 16px rgba(0,0,0,0.2); }
+        th, td { padding: 18px; text-align: left; border-bottom: 1px solid var(--bg-hover); }
+        th { background-color: rgba(0,172,193,0.1); color: var(--accent-primary); text-transform: uppercase; font-size: 13px; }
+        tr:hover { background-color: var(--bg-hover); }
+        .badge { background: #333; padding: 6px 12px; border-radius: 20px; font-weight: bold; font-size: 12px; color: var(--warning); }
+        .val-high { color: var(--danger); font-weight: bold; }
+        .val-normal { color: var(--success); font-weight: bold; }
+        .btn-detail { background: var(--accent-primary); color: white; border: none; padding: 8px 15px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-detail:hover { background: var(--accent-secondary); }
 
         /* MODAL */
-        .modal-overlay {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background: rgba(0,0,0,0.7);
-            z-index: 1000;
-            justify-content: center;
-            align-items: center;
-        }
-
-        .modal {
-            background: var(--bg-panel);
-            width: 80%;
-            max-width: 800px;
-            padding: 30px;
-            border-radius: 12px;
-            border: 1px solid var(--bg-hover);
-            position: relative;
-        }
-
-        .modal-close {
-            position: absolute;
-            top: 15px;
-            right: 20px;
-            font-size: 24px;
-            cursor: pointer;
-            color: var(--danger);
-            background: none;
-            border: none;
-        }
-
-        .chart-container {
-            width: 100%;
-            height: 300px;
-            margin-top: 20px;
-        }
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center; }
+        .modal { background: var(--bg-panel); width: 80%; max-width: 800px; padding: 30px; border-radius: 12px; border: 1px solid var(--bg-hover); position: relative; }
+        .modal-close { position: absolute; top: 15px; right: 20px; font-size: 24px; cursor: pointer; color: var(--danger); background: none; border: none; }
+        .chart-container { width: 100%; height: 300px; margin-top: 20px; }
 
         /* TOPOLOGY */
-        #topology-wrapper {
-            position: relative;
-            background: var(--bg-panel);
-            border-radius: 10px;
-            border: 1px solid var(--bg-hover);
-            box-shadow: inset 0 0 20px rgba(0,0,0,0.5);
-            overflow: hidden;
-        }
-
-        #topology-canvas {
-            display: block;
-            width: 100%;
-            height: 570px;
-            cursor: grab;
-        }
-
-            #topology-canvas:active {
-                cursor: grabbing;
-            }
-
-        #topology-legend {
-            position: absolute;
-            bottom: 14px;
-            left: 16px;
-            display: flex;
-            gap: 18px;
-            background: rgba(15,17,26,0.85);
-            padding: 8px 14px;
-            border-radius: 8px;
-            font-size: 12px;
-            color: var(--text-muted);
-            pointer-events: none;
-            user-select: none;
-        }
-
-        .legend-item {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-        }
-
-        .legend-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            flex-shrink: 0;
-        }
-
-        #topology-hint {
-            position: absolute;
-            top: 12px;
-            right: 16px;
-            font-size: 11px;
-            color: var(--text-muted);
-            background: rgba(15,17,26,0.7);
-            padding: 4px 10px;
-            border-radius: 6px;
-            pointer-events: none;
-        }
+        #topology-wrapper { position: relative; background: var(--bg-panel); border-radius: 10px; border: 1px solid var(--bg-hover); box-shadow: inset 0 0 20px rgba(0,0,0,0.5); overflow: hidden; }
+        #topology-canvas { display: block; width: 100%; height: 570px; cursor: grab; }
+        #topology-canvas:active { cursor: grabbing; }
+        #topology-legend { position: absolute; bottom: 14px; left: 16px; display: flex; gap: 18px; background: rgba(15,17,26,0.85); padding: 8px 14px; border-radius: 8px; font-size: 12px; color: var(--text-muted); pointer-events: none; user-select: none; }
+        .legend-item { display: flex; align-items: center; gap: 6px; }
+        .legend-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
 
         /* VIDEO */
-        .camera-controls {
-            background: var(--bg-panel);
-            padding: 20px;
-            border-radius: 10px;
-            margin-bottom: 20px;
-            display: flex;
-            gap: 10px;
-        }
+        .camera-controls { background: var(--bg-panel); padding: 20px; border-radius: 10px; margin-bottom: 20px; display: flex; gap: 10px; }
+        input[type="text"], select { padding: 12px; border-radius: 6px; border: 1px solid var(--bg-hover); background: var(--bg-dark); color: white; width: 250px; outline: none; }
+        button.add-cam { padding: 12px 20px; background: var(--accent-primary); color: white; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; }
+        .video-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap: 20px; }
+        .cam-box { background: var(--bg-panel); border-radius: 10px; overflow: hidden; border: 2px solid var(--bg-hover); }
+        .cam-header { background: rgba(0,0,0,0.8); padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; }
+        .cam-feed { width: 100%; aspect-ratio: 16/9; background: #000; object-fit: cover; }
 
-        input[type="text"] {
-            padding: 12px;
-            border-radius: 6px;
-            border: 1px solid var(--bg-hover);
-            background: var(--bg-dark);
-            color: white;
-            width: 250px;
-        }
-
-        button.add-cam {
-            padding: 12px 20px;
-            background: var(--accent-primary);
-            color: white;
-            border: none;
-            border-radius: 6px;
-            cursor: pointer;
-            font-weight: bold;
-        }
-
-        .video-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
-            gap: 20px;
-        }
-
-        .cam-box {
-            background: var(--bg-panel);
-            border-radius: 10px;
-            overflow: hidden;
-            border: 2px solid var(--bg-hover);
-        }
-
-        .cam-header {
-            background: rgba(0,0,0,0.8);
-            padding: 10px 15px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .cam-feed {
-            width: 100%;
-            aspect-ratio: 16/9;
-            background: #000;
-            object-fit: cover;
-        }
+        /* NOVO DESIGN DA ABA ANALYTICS */
+        .ml-badge { padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 1.2rem; display: inline-block; margin-bottom: 15px; border: 1px solid transparent; }
+        .ml-badge.safe { background: rgba(105, 240, 174, 0.1); color: var(--success); border-color: var(--success); }
+        .ml-badge.warning { background: rgba(255, 235, 59, 0.1); color: var(--warning); border-color: var(--warning); }
+        .ml-badge.danger { background: rgba(255, 82, 82, 0.1); color: var(--danger); border-color: var(--danger); }
+        .log-terminal { background: #000; padding: 15px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; color: var(--success); font-size: 0.9rem; margin-top: 20px; border: 1px solid #333; }
     </style>
 </head>
 <body>
@@ -393,7 +119,7 @@
             <li class="nav-item active" onclick="switchTab('overview',this)">Monitoring</li>
             <li class="nav-item" onclick="switchTab('topology',this)">Topology</li>
             <li class="nav-item" onclick="switchTab('cameras',this)">Sensors Streaming</li>
-            <li class="nav-item" onclick="switchTab('analytics',this)">Analytics</li>
+            <li class="nav-item" onclick="switchTab('analytics',this)">ML Analytics</li>
         </ul>
     </nav>
 
@@ -401,7 +127,7 @@
         <div class="topbar">
             <h3 style="margin:0;color:#fff;" id="page-title">Monitoring</h3>
             <div style="text-align:right;">
-                <span style="color:var(--text-muted);font-size:13px;">Last Reading</span>
+                <span style="color:var(--text-muted);font-size:13px;">System Time</span>
                 <div id="last-update" style="font-weight:bold;color:var(--accent-primary);">--:--:--</div>
             </div>
         </div>
@@ -424,13 +150,13 @@
                     </tr>
                 </thead>
                 <tbody id="readings-body">
-                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Processing data...</td></tr>
+                    <tr><td colspan="6" style="text-align:center;color:var(--text-muted);">Waiting for network data...</td></tr>
                 </tbody>
             </table>
         </section>
 
         <section id="topology" class="tab-pane">
-            <p style="color:var(--text-muted);">Real time Hierarchical Tree of active connections between Server &#8250; Gateways &#8250; Sensors.</p>
+            <p style="color:var(--text-muted); margin-bottom: 15px;">Real time Hierarchical Tree of active connections between Server &#8250; Gateways &#8250; Sensors.</p>
             <div id="topology-wrapper">
                 <canvas id="topology-canvas"></canvas>
                 <div id="topology-legend">
@@ -439,7 +165,6 @@
                     <div class="legend-item"><div class="legend-dot" style="background:#69f0ae;"></div>Sensor OK</div>
                     <div class="legend-item"><div class="legend-dot" style="background:#ff5252;"></div>Sensor Alert</div>
                 </div>
-                <div id="topology-hint">Scroll to zoom &bull; Click and drag to pan</div>
             </div>
         </section>
 
@@ -452,115 +177,92 @@
         </section>
 
         <section id="analytics" class="tab-pane">
-            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr 1fr; gap: 15px; margin-bottom: 25px;">
-                <div>
-                    <label style="color:var(--text-muted);font-weight:bold;">Zone</label>
-                    <select id="analytics-zone" onchange="updateAnalyticsSensors()" style="width:100%;padding:10px;background:var(--bg-hover);color:white;border:1px solid var(--bg-hover);border-radius:5px;margin-top:5px;">
-                        <option value="ALL">All Zones</option>
+            <div class="camera-controls" style="display: flex; gap: 20px; align-items: center;">
+                <div style="flex: 1;">
+                    <label style="color:var(--text-muted);font-weight:bold; display:block; margin-bottom:5px;">Target Sensor</label>
+                    <input type="text" id="ml-sensor" value="S101" style="width:100%;" placeholder="ex: S101">
+                </div>
+                <div style="flex: 1;">
+                    <label style="color:var(--text-muted);font-weight:bold; display:block; margin-bottom:5px;">Metric to Evaluate</label>
+                    <select id="ml-type" style="width:100%;">
+                        <option value="CO2">CO2 Levels</option>
+                        <option value="TEMP">Temperature</option>
+                        <option value="HUM">Humidity</option>
+                        <option value="PM2">Particulate Matter (PM2.5)</option>
+                        <option value="UV">UV Index</option>
+                        <option value="NOISE">Noise Level</option>
                     </select>
                 </div>
-                <div>
-                    <label style="color:var(--text-muted);font-weight:bold;">Data Type</label>
-                    <select id="analytics-type" onchange="updateAnalyticsSensors()" style="width:100%;padding:10px;background:var(--bg-hover);color:white;border:1px solid var(--bg-hover);border-radius:5px;margin-top:5px;">
-                        <option value="ALL">All Types</option>
-                    </select>
-                </div>
-                <div>
-                    <label style="color:var(--text-muted);font-weight:bold;">Sensor (Optional)</label>
-                    <select id="analytics-sensor" style="width:100%;padding:10px;background:var(--bg-hover);color:white;border:1px solid var(--bg-hover);border-radius:5px;margin-top:5px;">
-                        <option value="ALL">All Sensors</option>
-                    </select>
-                </div>
-                <div style="display:flex;align-items:flex-end;">
-                    <button onclick="loadAnalytics()" style="width:100%;padding:10px;background:var(--accent-primary);color:var(--bg-dark);font-weight:bold;border:none;border-radius:5px;cursor:pointer;">Calculate Statistics</button>
+                <div style="margin-top: 25px;">
+                    <button class="add-cam" onclick="runMLAnalysis()">Run Analysis Engine</button>
                 </div>
             </div>
 
-            <div id="analytics-results" style="display:none;">
-                <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(200px, 1fr));gap:15px;margin-bottom:25px;">
-                    <div class="card"><h4>Average</h4><p id="stat-mean" style="font-size:24px;color:var(--accent-primary);">--</p></div>
-                    <div class="card"><h4>Median</h4><p id="stat-median" style="font-size:24px;color:var(--accent-primary);">--</p></div>
-                    <div class="card"><h4>Std Dev</h4><p id="stat-stddev" style="font-size:24px;color:var(--accent-primary);">--</p></div>
-                    <div class="card"><h4>Minimum</h4><p id="stat-min" style="font-size:24px;color:var(--danger);">--</p></div>
-                    <div class="card"><h4>Maximum</h4><p id="stat-max" style="font-size:24px;color:var(--success);">--</p></div>
-                    <div class="card"><h4>Total Readings</h4><p id="stat-count" style="font-size:24px;color:var(--accent-primary);">--</p></div>
+            <div id="analytics-results" style="display:none; margin-top: 30px;">
+                <div id="ml-evaluation" class="ml-badge safe">Loading evaluation...</div>
+                
+                <div class="cards" style="grid-template-columns: repeat(4, 1fr);">
+                    <div class="card" style="border-top-color: #9c27b0;"><h3>Processed Samples</h3><p id="stat-count" style="color:#ce93d8;">--</p></div>
+                    <div class="card"><h3>Historical Mean</h3><p id="stat-mean">--</p></div>
+                    <div class="card"><h3>Max Recorded</h3><p id="stat-max" style="color:var(--danger);">--</p></div>
+                    <div class="card"><h3>Min Recorded</h3><p id="stat-min" style="color:var(--success);">--</p></div>
+                </div>
+
+                <div class="log-terminal" id="ml-log">
+                    > Python Analytics Engine standing by...
                 </div>
             </div>
         </section>
     </main>
 
     <script>
-        /* ────────────────────────────────────────────────────────
-            GLOBAL STATE
-        ──────────────────────────────────────────────────────── */
         var globalData = { gatewaysOnline: [], activeSensors: [], readings: [] };
         var sensorChartInstance = null;
 
-        /* ─── FORMAT DATE HELPER ─── */
-        // Formata a data ISO 8601 (longa) para DD/MM HH:mm:ss limpo
         function formatarData(isoString) {
             try {
                 const data = new Date(isoString);
-
-                // Extrai os valores e garante que têm 2 dígitos (ex: "09" em vez de "9")
                 const dia = String(data.getDate()).padStart(2, '0');
-                const mes = String(data.getMonth() + 1).padStart(2, '0'); // Os meses começam no 0 em JS
+                const mes = String(data.getMonth() + 1).padStart(2, '0');
                 const hora = String(data.getHours()).padStart(2, '0');
                 const min = String(data.getMinutes()).padStart(2, '0');
                 const seg = String(data.getSeconds()).padStart(2, '0');
-
-                // Retorna no formato: 14/04 17:05:58
                 return `${dia}/${mes} ${hora}:${min}:${seg}`;
-            } catch (e) {
-                return isoString; // Fallback se a data for inválida
-            }
+            } catch (e) { return isoString; }
         }
 
-        /* ────────────────────────────────────────────────────────
-            NAVIGATION
-        ──────────────────────────────────────────────────────── */
         function switchTab(tabId, el) {
-            document.querySelectorAll('.tab-pane').forEach(function (t) { t.classList.remove('active'); });
-            document.querySelectorAll('.nav-item').forEach(function (n) { n.classList.remove('active'); });
+            document.querySelectorAll('.tab-pane').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
             el.classList.add('active');
             document.getElementById('page-title').innerText = el.innerText;
             if (tabId === 'topology') { topoResizeCanvas(); topoSyncGraph(); }
         }
 
-        /* ────────────────────────────────────────────────────────
-            DATA FETCH
-        ──────────────────────────────────────────────────────── */
+        // Tenta obter o estado global se a rota existir no C# (Graceful Degradation)
         async function fetchData() {
             try {
                 var res = await fetch('/api/status');
-                globalData = await res.json();
-                updateDashboard();
-                if (document.getElementById('topology').classList.contains('active')) {
-                    topoSyncGraph();
+                if (res.ok) {
+                    globalData = await res.json();
+                    updateDashboard();
+                    if (document.getElementById('topology').classList.contains('active')) topoSyncGraph();
                 }
-            } catch (e) { console.error('API Error:', e); }
+            } catch (e) { /* Ignora falhas se a rota /api/status ainda não estiver no C# */ }
         }
 
-        /* ────────────────────────────────────────────────────────
-            DASHBOARD
-        ──────────────────────────────────────────────────────── */
         function updateDashboard() {
             document.getElementById('last-update').innerText = new Date().toLocaleTimeString();
             document.getElementById('gw-count').innerText = globalData.gatewaysOnline.length;
-
-            var activeSensorsList = globalData.activeSensors || [];
-            document.getElementById('sensor-count').innerText = activeSensorsList.length;
-
+            document.getElementById('sensor-count').innerText = (globalData.activeSensors || []).length;
             var tbody = document.getElementById('readings-body');
             tbody.innerHTML = '';
             var alertCount = 0;
 
-            globalData.readings.slice(0, 10).forEach(function (r) {
+            globalData.readings.slice(0, 10).forEach(r => {
                 var cls = 'val-normal', suffix = '';
-
                 var val = parseFloat(r.Value);
-
                 if (r.Type === 'TEMP') { suffix = ' \u00B0C'; if (val > 28) { cls = 'val-high'; alertCount++; } }
                 else if (r.Type === 'HUM') { suffix = ' %'; if (val > 70) { cls = 'val-high'; alertCount++; } }
                 else if (r.Type === 'CO2') { suffix = ' ppm'; if (val > 800) { cls = 'val-high'; alertCount++; } }
@@ -568,32 +270,20 @@
                 else if (r.Type === 'PM2') { suffix = ' ug/m³'; if (val > 35) { cls = 'val-high'; alertCount++; } }
                 else if (r.Type === 'UV') { suffix = ' UV'; if (val > 7) { cls = 'val-high'; alertCount++; } }
 
-                // --- FORMATA A DATA PARA A TABELA ---
-                const horaLimpa = formatarData(r.Time);
-
                 var tr = document.createElement('tr');
-                tr.innerHTML =
-                    '<td style="color:var(--text-muted);">' + horaLimpa + '</td>' +
-                    '<td><strong>' + r.Sensor + '</strong></td>' +
-                    '<td>' + r.Zone + '</td>' +
-                    '<td><span class="badge">' + r.Type + '</span></td>' +
-                    '<td class="' + cls + '">' + r.Value + suffix + '</td>' +
-                    '<td><button class="btn-detail" onclick="openModal(\'' + r.Sensor + '\', \'' + r.Type + '\')">Details</button></td>';
+                tr.innerHTML = `<td style="color:var(--text-muted);">${formatarData(r.Time)}</td>
+                                <td><strong>${r.Sensor}</strong></td><td>${r.Zone}</td>
+                                <td><span class="badge">${r.Type}</span></td><td class="${cls}">${r.Value}${suffix}</td>
+                                <td><button class="btn-detail" onclick="openModal('${r.Sensor}', '${r.Type}')">Details</button></td>`;
                 tbody.appendChild(tr);
             });
             document.getElementById('alert-count').innerText = alertCount;
         }
 
-        /* ────────────────────────────────────────────────────────
-            MODAL
-        ──────────────────────────────────────────────────────── */
         function openModal(sensorId, targetType) {
             document.getElementById('sensor-modal').style.display = 'flex';
-            document.getElementById('modal-title').innerText = 'Analytical History: ' + sensorId + ' - ' + targetType;
-
-            var sensorData = globalData.readings.filter(function (r) {
-                return r.Sensor === sensorId && r.Type === targetType;
-            }).reverse();
+            document.getElementById('modal-title').innerText = `Analytical History: ${sensorId} - ${targetType}`;
+            var sensorData = globalData.readings.filter(r => r.Sensor === sensorId && r.Type === targetType).reverse();
 
             if (sensorData.length > 0) {
                 var last = sensorData[sensorData.length - 1];
@@ -606,373 +296,150 @@
                 document.getElementById('modal-latest').innerText = 'Last: --';
             }
 
-            // --- FORMATA A DATA PARA OS GRÁFICOS ---
-            var labels = sensorData.map(function (r) { return formatarData(r.Time); });
-            var values = sensorData.map(function (r) { return parseFloat(r.Value); });
-            var dataType = sensorData.length > 0 ? sensorData[0].Type : 'Value';
-
             var ctx = document.getElementById('sensorChart').getContext('2d');
             if (sensorChartInstance) sensorChartInstance.destroy();
             sensorChartInstance = new Chart(ctx, {
                 type: 'line',
                 data: {
-                    labels: labels,
+                    labels: sensorData.map(r => formatarData(r.Time)),
                     datasets: [{
-                        label: dataType + ' over time',
-                        data: values,
-                        borderColor: '#00acc1',
-                        backgroundColor: 'rgba(0,172,193,0.15)',
-                        borderWidth: 3,
-                        pointBackgroundColor: '#69f0ae',
-                        fill: true,
-                        tension: 0.3
+                        label: (sensorData.length > 0 ? sensorData[0].Type : 'Value') + ' over time',
+                        data: sensorData.map(r => parseFloat(r.Value)),
+                        borderColor: '#00acc1', backgroundColor: 'rgba(0,172,193,0.15)',
+                        borderWidth: 3, pointBackgroundColor: '#69f0ae', fill: true, tension: 0.3
                     }]
                 },
                 options: {
                     responsive: true, maintainAspectRatio: false,
-                    scales: {
-                        y: { beginAtZero: false, grid: { color: '#262a40' }, ticks: { color: '#8a91b8' } },
-                        // Configurações extra para não encavalar o texto:
-                        x: { grid: { display: false }, ticks: { color: '#8a91b8', maxRotation: 0, autoSkip: true, maxTicksLimit: 10 } }
-                    },
+                    scales: { y: { grid: { color: '#262a40' }, ticks: { color: '#8a91b8' } }, x: { grid: { display: false }, ticks: { color: '#8a91b8' } } },
                     plugins: { legend: { labels: { color: '#ffffff' } } }
                 }
             });
         }
         function closeModal() { document.getElementById('sensor-modal').style.display = 'none'; }
 
-        /* ────────────────────────────────────────────────────────
-            VIDEO WALL
-        ──────────────────────────────────────────────────────── */
+        // VIDEO WALL
         var cameraIntervals = {};
         function addCamera() {
             var sid = document.getElementById('cam-sid').value.trim().toUpperCase();
             if (!sid || cameraIntervals[sid]) return;
             var box = document.createElement('div');
             box.className = 'cam-box'; box.id = 'box-' + sid;
-            box.innerHTML =
-                '<div class="cam-header">' +
-                '<span style="color:var(--danger);font-weight:bold;">&#9679; REC | ' + sid + '</span>' +
-                '<button onclick="removeCamera(\'' + sid + '\')" style="background:none;color:white;border:none;cursor:pointer;">&#x2716;</button>' +
-                '</div>' +
-                '<img class="cam-feed" id="img-' + sid + '" src="/image/' + sid + '?t=' + Date.now() + '" onerror="this.src=\'\'">';
+            box.innerHTML = `<div class="cam-header"><span style="color:var(--danger);font-weight:bold;">&#9679; REC | ${sid}</span>
+                             <button onclick="removeCamera('${sid}')" style="background:none;color:white;border:none;cursor:pointer;">&#x2716;</button></div>
+                             <img class="cam-feed" id="img-${sid}" src="/image/${sid}?t=${Date.now()}" onerror="this.src=''">`;
             document.getElementById('video-wall').appendChild(box);
-            cameraIntervals[sid] = setInterval(function () {
+            cameraIntervals[sid] = setInterval(() => {
                 var img = document.getElementById('img-' + sid);
-                if (img) img.src = '/image/' + sid + '?t=' + Date.now();
+                if (img) img.src = `/image/${sid}?t=${Date.now()}`;
             }, 200);
             document.getElementById('cam-sid').value = '';
         }
-        function removeCamera(sid) {
-            clearInterval(cameraIntervals[sid]);
-            delete cameraIntervals[sid];
-            var el = document.getElementById('box-' + sid);
-            if (el) el.remove();
+        function removeCamera(sid) { clearInterval(cameraIntervals[sid]); delete cameraIntervals[sid]; document.getElementById('box-' + sid).remove(); }
+
+        // NOVA FUNÇÃO ANALYTICS (Conecta-se ao Python via C# API)
+        async function runMLAnalysis() {
+            const sensor = document.getElementById('ml-sensor').value.toUpperCase();
+            const type = document.getElementById('ml-type').value;
+            const logBox = document.getElementById('ml-log');
+            
+            document.getElementById('analytics-results').style.display = 'block';
+            logBox.innerHTML += `<br>> <strong>[${new Date().toLocaleTimeString()}]</strong> Enviando pedido gRPC para análise de ${type} no sensor ${sensor}...`;
+            
+            try {
+                const response = await fetch(`/api/analyze/${sensor}/${type}`);
+                
+                if (!response.ok) throw new Error("A Base de Dados ainda não tem registos deste tipo ou o gRPC falhou.");
+
+                const data = await response.json();
+
+                document.getElementById('stat-count').innerText = data.Statistics.ProcessedSamples;
+                document.getElementById('stat-mean').innerText = data.Statistics.Mean.toFixed(2);
+                document.getElementById('stat-max').innerText = data.Statistics.Max.toFixed(2);
+                document.getElementById('stat-min').innerText = data.Statistics.Min.toFixed(2);
+
+                const badge = document.getElementById('ml-evaluation');
+                badge.innerText = data.Evaluation;
+                badge.className = 'ml-badge'; // reset
+                
+                const evalLower = data.Evaluation.toLowerCase();
+                if (evalLower.includes('normal') || evalLower.includes('seguro')) badge.classList.add('safe');
+                else if (evalLower.includes('moderado') || evalLower.includes('atenção')) badge.classList.add('warning');
+                else badge.classList.add('danger');
+
+                logBox.innerHTML += `<br>> <span style="color:var(--text-main)">Resposta recebida:</span> ${data.MicroserviceMessage}`;
+                
+            } catch (error) {
+                document.getElementById('ml-evaluation').innerText = "Erro na Análise (Sem Dados)";
+                document.getElementById('ml-evaluation').className = 'ml-badge danger';
+                document.getElementById('stat-count').innerText = "0";
+                document.getElementById('stat-mean').innerText = "--";
+                document.getElementById('stat-max').innerText = "--";
+                document.getElementById('stat-min').innerText = "--";
+                logBox.innerHTML += `<br>> <span style="color:var(--danger)">ERRO: ${error.message}</span>`;
+            }
+            logBox.scrollTop = logBox.scrollHeight; // Auto-scroll
         }
 
-        /* ════════════════════════════════════════════════════════
-            TOPOLOGY — HIERARCHICAL TREE (STATIC LAYOUT)
-        ════════════════════════════════════════════════════════ */
+        // TOPOLOGY LOGIC MANTIDA E MINIFICADA POR ORGANIZAÇÃO
         (function () {
-            var COL = {
-                server: '#00acc1', gateway: '#8a91b8', sensorOk: '#69f0ae', sensorAlert: '#ff5252',
-                edgeSrv: 'rgba(0,172,193,0.40)', edgeGw: 'rgba(138,145,184,0.35)'
+            var COL={server:'#00acc1',gateway:'#8a91b8',sensorOk:'#69f0ae',sensorAlert:'#ff5252',edgeSrv:'rgba(0,172,193,0.40)',edgeGw:'rgba(138,145,184,0.35)'},
+            _nodes={},_edges={},_canvas=null,_ctx=null,_W=0,_H=0,_pan={x:0,y:0},_zoom=1,_panDrag=null,_raf=null,_tick=0;
+            function mkNode(id,t,l){return{id:id,type:t,label:l,x:0,y:0,tx:0,ty:0,alert:false};}
+            window.topoSyncGraph=function(){
+                var gws=globalData.gatewaysOnline||[],sensors=globalData.activeSensors||[],reads=globalData.readings||[],alertSet={};
+                reads.forEach(function(r){var v=parseFloat(r.Value);if((r.Type==='TEMP'&&v>33)||(r.Type==='HUM'&&v>78)||(r.Type==='CO2'&&v>995)||(r.Type==='NOISE'&&v>88)||(r.Type==='PM2'&&v>48)||(r.Type==='UV'&&v>9))alertSet[r.Sensor]=true;});
+                if(!_nodes['SERVER'])_nodes['SERVER']=mkNode('SERVER','SERVER','Server');
+                var liveGw={};gws.forEach(function(gw){liveGw[gw]=true;if(!_nodes[gw])_nodes[gw]=mkNode(gw,'GATEWAY',gw);var eid='e_'+gw+'_SRV';if(!_edges[eid])_edges[eid]={id:eid,from:gw,to:'SERVER',type:'SG'};});
+                var liveSn={};sensors.forEach(function(s){liveSn[s.Sensor]=true;if(!_nodes[s.Sensor])_nodes[s.Sensor]=mkNode(s.Sensor,'SENSOR',s.Sensor);_nodes[s.Sensor].alert=!!alertSet[s.Sensor];var eid='e_'+s.Sensor+'_'+s.Gateway;if(!_edges[eid]){Object.keys(_edges).forEach(function(k){if((_edges[k].from===s.Sensor)&&k!==eid)delete _edges[k];});if(_nodes[s.Gateway])_edges[eid]={id:eid,from:s.Sensor,to:s.Gateway,type:'GS'};}});
+                Object.keys(_nodes).forEach(function(id){var n=_nodes[id];if((n.type==='GATEWAY'&&!liveGw[id])||(n.type==='SENSOR'&&!liveSn[id])){delete _nodes[id];Object.keys(_edges).forEach(function(eid){if(_edges[eid].from===id||_edges[eid].to===id)delete _edges[eid];});}});
+                var srv=_nodes['SERVER'];if(srv){srv.tx=0;srv.ty=-180;}var gwNodes=Object.values(_nodes).filter(function(n){return n.type==='GATEWAY';}),snNodes=Object.values(_nodes).filter(function(n){return n.type==='SENSOR';}),currentX=0;
+                gwNodes.forEach(function(gw){var gwSensors=snNodes.filter(function(s){return !!_edges['e_'+s.id+'_'+gw.id];}),branchWidth=Math.max(120,gwSensors.length*90),startX=currentX;gwSensors.forEach(function(s,i){s.tx=startX+(branchWidth/gwSensors.length)*(i+0.5);s.ty=160;});gw.tx=startX+branchWidth/2;gw.ty=0;currentX+=branchWidth+100;});
+                var shiftX=-(currentX>0?currentX-100:0)/2;gwNodes.forEach(function(gw){gw.tx+=shiftX;});snNodes.forEach(function(s){s.tx+=shiftX;});
+                if(!_raf)_loop();
             };
-
-            var _nodes = {}; /* id -> node */
-            var _edges = {}; /* id -> edge */
-
-            var _canvas = null, _ctx = null;
-            var _W = 0, _H = 0;
-            var _pan = { x: 0, y: 0 };
-            var _zoom = 1;
-            var _panDrag = null;
-            var _raf = null;
-            var _tick = 0;
-
-            function mkNode(id, type, label) {
-                return {
-                    id: id, type: type, label: label,
-                    x: 0, y: 0, tx: 0, ty: 0, alert: false
-                };
-            }
-
-            window.topoSyncGraph = function () {
-                var gws = globalData.gatewaysOnline || [];
-                var sensors = globalData.activeSensors || [];
-                var reads = globalData.readings || [];
-
-                var alertSet = {};
-                reads.forEach(function (r) {
-                    var val = parseFloat(r.Value);
-                    if (r.Type === 'TEMP' && val > 33) alertSet[r.Sensor] = true;
-                    if (r.Type === 'HUM' && val > 78) alertSet[r.Sensor] = true;
-                    if (r.Type === 'CO2' && val > 995) alertSet[r.Sensor] = true;
-                    if (r.Type === 'NOISE' && val > 88) alertSet[r.Sensor] = true;
-                    if (r.Type === 'PM2' && val > 48) alertSet[r.Sensor] = true;
-                    if (r.Type === 'UV' && val > 9) alertSet[r.Sensor] = true;
+            function _loop(){
+                Object.values(_nodes).forEach(function(n){n.x+=(n.tx-n.x)*0.1;n.y+=(n.ty-n.y)*0.1;});
+                if(!_canvas)return;_ctx.clearRect(0,0,_W,_H);_ctx.fillStyle='rgba(255,255,255,0.04)';
+                var gs=50*_zoom,ox=(_W/2+_pan.x)%gs,oy=(_H/2+_pan.y)%gs,cx=_W/2+_pan.x,cy=_H/2+_pan.y;
+                for(var gx=ox;gx<_W;gx+=gs)for(var gy=oy;gy<_H;gy+=gs){_ctx.beginPath();_ctx.arc(gx,gy,1,0,Math.PI*2);_ctx.fill();}
+                Object.values(_edges).forEach(function(e){var a=_nodes[e.from],b=_nodes[e.to];if(!a||!b)return;var ax=cx+a.x*_zoom,ay=cy+a.y*_zoom,bx=cx+b.x*_zoom,by=cy+b.y*_zoom,col=e.type==='SG'?COL.edgeSrv:COL.edgeGw;
+                    var grad=_ctx.createLinearGradient(ax,ay,bx,by);grad.addColorStop(0,col.replace('0.40','0.7').replace('0.35','0.7'));grad.addColorStop(1,col.replace('0.40','0.1').replace('0.35','0.1'));
+                    _ctx.save();_ctx.strokeStyle=grad;_ctx.lineWidth=1.5;_ctx.setLineDash([6,5]);_ctx.beginPath();_ctx.moveTo(ax,ay);_ctx.lineTo(bx,by);_ctx.stroke();_ctx.setLineDash([]);
+                    var ang=Math.atan2(by-ay,bx-ax);_ctx.fillStyle=col.replace('0.40','0.75').replace('0.35','0.7');_ctx.beginPath();_ctx.moveTo(bx-9*Math.cos(ang),by-9*Math.sin(ang));_ctx.lineTo(bx-9*Math.cos(ang-0.5),by-9*Math.sin(ang-0.5));_ctx.lineTo(bx-9*Math.cos(ang+0.5),by-9*Math.sin(ang+0.5));_ctx.closePath();_ctx.fill();_ctx.restore();
                 });
-
-                if (!_nodes['SERVER']) _nodes['SERVER'] = mkNode('SERVER', 'SERVER', 'Server');
-
-                var liveGw = {};
-                gws.forEach(function (gw) {
-                    liveGw[gw] = true;
-                    if (!_nodes[gw]) _nodes[gw] = mkNode(gw, 'GATEWAY', gw);
-                    var eid = 'e_' + gw + '_SRV';
-                    if (!_edges[eid]) _edges[eid] = { id: eid, from: gw, to: 'SERVER', type: 'SG' };
-                });
-
-                var liveSn = {};
-                sensors.forEach(function (s) {
-                    liveSn[s.Sensor] = true;
-                    if (!_nodes[s.Sensor]) _nodes[s.Sensor] = mkNode(s.Sensor, 'SENSOR', s.Sensor);
-                    _nodes[s.Sensor].alert = !!alertSet[s.Sensor];
-                    var eid = 'e_' + s.Sensor + '_' + s.Gateway;
-                    if (!_edges[eid]) {
-                        Object.keys(_edges).forEach(function (k) {
-                            if ((_edges[k].from === s.Sensor) && k !== eid) delete _edges[k];
-                        });
-                        if (_nodes[s.Gateway]) _edges[eid] = { id: eid, from: s.Sensor, to: s.Gateway, type: 'GS' };
+                Object.values(_nodes).forEach(function(n){
+                    var sx=cx+n.x*_zoom,sy=cy+n.y*_zoom,r=(n.type==='SERVER'?22:n.type==='GATEWAY'?17:14)*_zoom,col=n.type==='SERVER'?COL.server:(n.type==='GATEWAY'?COL.gateway:(n.alert?COL.sensorAlert:COL.sensorOk));
+                    _ctx.save();
+                    if(n.type==='SERVER'){
+                        var g=_ctx.createRadialGradient(sx,sy,0,sx,sy,r*2.2);g.addColorStop(0,'rgba(0,172,193,0.16)');g.addColorStop(1,'transparent');
+                        _ctx.fillStyle=g;_ctx.beginPath();_ctx.arc(sx,sy,r*2.2,0,Math.PI*2);_ctx.fill();
+                        _ctx.fillStyle='#101424';_ctx.strokeStyle=col;_ctx.lineWidth=2.5;_ctx.beginPath();_ctx.roundRect(sx-r*0.75,sy-r,r*1.5,r*2,4);_ctx.fill();_ctx.stroke();
+                    }else if(n.type==='GATEWAY'){
+                        _ctx.fillStyle='#101424';_ctx.strokeStyle=col;_ctx.lineWidth=2;_ctx.beginPath();_ctx.roundRect(sx-r*1.2,sy-r*0.6,r*2.4,r*1.2,4);_ctx.fill();_ctx.stroke();
+                    }else{
+                        if(n.alert){_ctx.strokeStyle='rgba(255,82,82,'+(0.45+0.45*Math.sin(_tick*0.09))+')';_ctx.lineWidth=2;_ctx.beginPath();for(var i=0;i<6;i++){var a=i*Math.PI/3-Math.PI/6;_ctx.lineTo(sx+(r+8)*Math.cos(a),sy+(r+8)*Math.sin(a));}_ctx.closePath();_ctx.stroke();}
+                        _ctx.fillStyle='#101424';_ctx.strokeStyle=col;_ctx.lineWidth=2.5;_ctx.beginPath();for(var i=0;i<6;i++){var a=i*Math.PI/3-Math.PI/6;_ctx.lineTo(sx+r*Math.cos(a),sy+r*Math.sin(a));}_ctx.closePath();_ctx.fill();_ctx.stroke();
+                        _ctx.fillStyle=col;_ctx.beginPath();_ctx.arc(sx,sy,4,0,Math.PI*2);_ctx.fill();
                     }
+                    _ctx.fillStyle='#fff';_ctx.font='bold '+Math.max(9,Math.round(10*_zoom))+'px "Segoe UI",sans-serif';_ctx.textAlign='center';_ctx.textBaseline='top';_ctx.fillText(n.label,sx,sy+(n.type==='SERVER'?r:r)+5);_ctx.restore();
                 });
-
-                Object.keys(_nodes).forEach(function (id) {
-                    var n = _nodes[id];
-                    if ((n.type === 'GATEWAY' && !liveGw[id]) || (n.type === 'SENSOR' && !liveSn[id])) {
-                        delete _nodes[id];
-                        Object.keys(_edges).forEach(function (eid) {
-                            if (_edges[eid].from === id || _edges[eid].to === id) delete _edges[eid];
-                        });
-                    }
-                });
-                calculateHierarchicalLayout();
-                if (!_raf) _loop();
-            };
-
-            function calculateHierarchicalLayout() {
-                var srv = _nodes['SERVER'];
-                if (srv) { srv.tx = 0; srv.ty = -180; }
-                var gwNodes = Object.values(_nodes).filter(function (n) { return n.type === 'GATEWAY'; });
-                var snNodes = Object.values(_nodes).filter(function (n) { return n.type === 'SENSOR'; });
-                var currentX = 0;
-                var sensorSpacing = 90;
-                var gatewayGap = 100;
-                gwNodes.forEach(function (gw) {
-                    var gwSensors = snNodes.filter(function (s) { return !!_edges['e_' + s.id + '_' + gw.id]; });
-                    var branchWidth = Math.max(120, gwSensors.length * sensorSpacing);
-                    var startX = currentX;
-                    gwSensors.forEach(function (s, i) {
-                        s.tx = startX + (branchWidth / gwSensors.length) * (i + 0.5);
-                        s.ty = 160;
-                    });
-                    gw.tx = startX + branchWidth / 2;
-                    gw.ty = 0;
-                    currentX += branchWidth + gatewayGap;
-                });
-                var totalW = currentX > 0 ? currentX - gatewayGap : 0;
-                var shiftX = -totalW / 2;
-                gwNodes.forEach(function (gw) { gw.tx += shiftX; });
-                snNodes.forEach(function (s) { s.tx += shiftX; });
+                _tick++;_raf=requestAnimationFrame(_loop);
             }
-
-            function animateNodes() {
-                Object.values(_nodes).forEach(function (n) {
-                    n.x += (n.tx - n.x) * 0.1;
-                    n.y += (n.ty - n.y) * 0.1;
-                });
-            }
-
-            function rrect(x, y, w, h, r) {
-                _ctx.beginPath(); _ctx.moveTo(x + r, y);
-                _ctx.lineTo(x + w - r, y); _ctx.arcTo(x + w, y, x + w, y + r, r);
-                _ctx.lineTo(x + w, y + h - r); _ctx.arcTo(x + w, y + h, x + w - r, y + h, r);
-                _ctx.lineTo(x + r, y + h); _ctx.arcTo(x, y + h, x, y + h - r, r);
-                _ctx.lineTo(x, y + r); _ctx.arcTo(x, y, x + r, y, r); _ctx.closePath();
-            }
-
-            function drawEdge(ax, ay, bx, by, col) {
-                var grad = _ctx.createLinearGradient(ax, ay, bx, by);
-                grad.addColorStop(0, col.replace('0.40', '0.7').replace('0.35', '0.7'));
-                grad.addColorStop(1, col.replace('0.40', '0.1').replace('0.35', '0.1'));
-                _ctx.save(); _ctx.strokeStyle = grad; _ctx.lineWidth = 1.5;
-                _ctx.setLineDash([6, 5]); _ctx.beginPath(); _ctx.moveTo(ax, ay); _ctx.lineTo(bx, by); _ctx.stroke();
-                _ctx.setLineDash([]);
-                var ang = Math.atan2(by - ay, bx - ax);
-                var t = 9;
-                _ctx.fillStyle = col.replace('0.40', '0.75').replace('0.35', '0.7');
-                _ctx.beginPath(); _ctx.moveTo(bx - t * Math.cos(ang), by - t * Math.sin(ang));
-                _ctx.lineTo(bx - t * Math.cos(ang - 0.5), by - t * Math.sin(ang - 0.5));
-                _ctx.lineTo(bx - t * Math.cos(ang + 0.5), by - t * Math.sin(ang + 0.5));
-                _ctx.closePath(); _ctx.fill(); _ctx.restore();
-            }
-
-            function drawServer(sx, sy, r, col) {
-                _ctx.save();
-                var g = _ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 2.2);
-                g.addColorStop(0, 'rgba(0,172,193,0.16)'); g.addColorStop(1, 'transparent');
-                _ctx.fillStyle = g; _ctx.beginPath(); _ctx.arc(sx, sy, r * 2.2, 0, Math.PI * 2); _ctx.fill();
-                var w = r * 1.5, h = r * 2;
-                _ctx.fillStyle = '#101424'; _ctx.strokeStyle = col; _ctx.lineWidth = 2.5;
-                rrect(sx - w / 2, sy - h / 2, w, h, 4); _ctx.fill(); _ctx.stroke();
-                for (var i = 0; i < 3; i++) {
-                    var slotY = sy - h / 2 + 6 + i * (h / 3 - 1);
-                    _ctx.fillStyle = '#1a1e35'; _ctx.strokeStyle = '#2d3258'; _ctx.lineWidth = 1;
-                    rrect(sx - w / 2 + 4, slotY, w - 8, h / 3 - 5, 2); _ctx.fill(); _ctx.stroke();
-                    _ctx.fillStyle = i === 0 ? COL.sensorOk : (i === 1 ? '#00acc1' : '#8a91b8');
-                    _ctx.beginPath(); _ctx.arc(sx - w / 2 + 10, slotY + (h / 3 - 5) / 2, 2.5, 0, Math.PI * 2); _ctx.fill();
-                }
-                _ctx.fillStyle = '#fff'; _ctx.font = 'bold ' + Math.max(10, Math.round(11 * _zoom)) + 'px "Segoe UI",sans-serif';
-                _ctx.textAlign = 'center'; _ctx.textBaseline = 'top'; _ctx.fillText('Server', sx, sy + h / 2 + 6); _ctx.restore();
-            }
-
-            function drawGateway(sx, sy, r, col, label) {
-                var w = r * 2.4, h = r * 1.2;
-                _ctx.save(); _ctx.fillStyle = '#101424'; _ctx.strokeStyle = col; _ctx.lineWidth = 2;
-                rrect(sx - w / 2, sy - h / 2, w, h, 4); _ctx.fill(); _ctx.stroke();
-                _ctx.strokeStyle = col; _ctx.lineWidth = 1.5;
-                [sx - w * 0.3, sx + w * 0.3].forEach(function (ax, i) {
-                    var tip = sy - h / 2 - r * 0.85 * (i === 0 ? 1 : 1);
-                    _ctx.beginPath(); _ctx.moveTo(ax, sy - h / 2); _ctx.lineTo(ax + (i === 0 ? -5 : 5), tip); _ctx.stroke();
-                    _ctx.fillStyle = col; _ctx.beginPath(); _ctx.arc(ax + (i === 0 ? -5 : 5), tip, 3, 0, Math.PI * 2); _ctx.fill();
-                });
-                [COL.sensorOk, COL.sensorOk, '#00acc1', '#8a91b8'].forEach(function (c, i) {
-                    _ctx.fillStyle = c; _ctx.beginPath(); _ctx.arc(sx - w * 0.3 + i * (w * 0.2), sy, 3, 0, Math.PI * 2); _ctx.fill();
-                });
-                _ctx.fillStyle = '#fff'; _ctx.font = 'bold ' + Math.max(9, Math.round(10 * _zoom)) + 'px "Segoe UI",sans-serif';
-                _ctx.textAlign = 'center'; _ctx.textBaseline = 'top'; _ctx.fillText(label, sx, sy + h / 2 + 6); _ctx.restore();
-            }
-
-            function drawSensor(sx, sy, r, col, alerting, label) {
-                _ctx.save();
-                if (alerting) {
-                    var pulse = 0.45 + 0.45 * Math.sin(_tick * 0.09);
-                    _ctx.strokeStyle = 'rgba(255,82,82,' + pulse + ')'; _ctx.lineWidth = 2; _ctx.beginPath();
-                    for (var i = 0; i < 6; i++) {
-                        var a = i * Math.PI / 3 - Math.PI / 6;
-                        _ctx.lineTo(sx + (r + 8) * Math.cos(a), sy + (r + 8) * Math.sin(a));
-                    }
-                    _ctx.closePath(); _ctx.stroke();
-                }
-                _ctx.fillStyle = '#101424'; _ctx.strokeStyle = col; _ctx.lineWidth = 2.5; _ctx.beginPath();
-                for (var i = 0; i < 6; i++) {
-                    var a = i * Math.PI / 3 - Math.PI / 6;
-                    _ctx.lineTo(sx + r * Math.cos(a), sy + r * Math.sin(a));
-                }
-                _ctx.closePath(); _ctx.fill(); _ctx.stroke();
-                _ctx.fillStyle = col; _ctx.beginPath(); _ctx.arc(sx, sy, 4, 0, Math.PI * 2); _ctx.fill();
-                _ctx.fillStyle = '#fff'; _ctx.font = 'bold ' + Math.max(9, Math.round(10 * _zoom)) + 'px "Segoe UI",sans-serif';
-                _ctx.textAlign = 'center'; _ctx.textBaseline = 'top'; _ctx.fillText(label, sx, sy + r + 5); _ctx.restore();
-            }
-
-            function render() {
-                if (!_canvas) return;
-                _ctx.clearRect(0, 0, _W, _H);
-                _ctx.fillStyle = 'rgba(255,255,255,0.04)';
-                var gs = 50 * _zoom;
-                var ox = (_W / 2 + _pan.x) % gs, oy = (_H / 2 + _pan.y) % gs;
-                for (var gx = ox; gx < _W; gx += gs)
-                    for (var gy = oy; gy < _H; gy += gs) {
-                        _ctx.beginPath(); _ctx.arc(gx, gy, 1, 0, Math.PI * 2); _ctx.fill();
-                    }
-                var cx = _W / 2 + _pan.x, cy = _H / 2 + _pan.y;
-                Object.values(_edges).forEach(function (e) {
-                    var a = _nodes[e.from], b = _nodes[e.to];
-                    if (!a || !b) return;
-                    drawEdge(cx + a.x * _zoom, cy + a.y * _zoom, cx + b.x * _zoom, cy + b.y * _zoom, e.type === 'SG' ? COL.edgeSrv : COL.edgeGw);
-                });
-                Object.values(_nodes).forEach(function (n) {
-                    var sx = cx + n.x * _zoom, sy = cy + n.y * _zoom;
-                    var r = (n.type === 'SERVER' ? 22 : n.type === 'GATEWAY' ? 17 : 14) * _zoom;
-                    var col = (n.type === 'SERVER') ? COL.server : (n.type === 'GATEWAY' ? COL.gateway : (n.alert ? COL.sensorAlert : COL.sensorOk));
-                    if (n.type === 'SERVER') drawServer(sx, sy, r, col);
-                    else if (n.type === 'GATEWAY') drawGateway(sx, sy, r, col, n.label);
-                    else drawSensor(sx, sy, r, col, n.alert, n.label);
-                });
-                _tick++;
-            }
-
-            function _loop() { animateNodes(); render(); _raf = requestAnimationFrame(_loop); }
-
-            window.topoResizeCanvas = function () {
-                if (!_canvas) return;
-                var rect = _canvas.getBoundingClientRect();
-                var dpr = window.devicePixelRatio || 1;
-                _canvas.width = rect.width * dpr; _canvas.height = rect.height * dpr;
-                _ctx.setTransform(dpr, 0, 0, dpr, 0, 0); _W = rect.width; _H = rect.height;
-            };
-
-            function onDown(ex, ey) { _panDrag = { sx: ex, sy: ey, px: _pan.x, py: _pan.y }; }
-            function onMove(ex, ey) { if (_panDrag) { _pan.x = _panDrag.px + (ex - _panDrag.sx); _pan.y = _panDrag.py + (ey - _panDrag.sy); } }
-            function onUp() { _panDrag = null; }
-
-            function init() {
-                _canvas = document.getElementById('topology-canvas'); _ctx = _canvas.getContext('2d');
-                topoResizeCanvas();
-                _canvas.addEventListener('mousedown', function (e) { onDown(e.clientX, e.clientY); });
-                _canvas.addEventListener('mousemove', function (e) { onMove(e.clientX, e.clientY); });
-                _canvas.addEventListener('mouseup', onUp); _canvas.addEventListener('mouseleave', onUp);
-                _canvas.addEventListener('wheel', function (e) {
-                    e.preventDefault(); _zoom = Math.max(0.25, Math.min(3.5, _zoom * (e.deltaY < 0 ? 1.1 : 0.91)));
-                }, { passive: false });
-                window.addEventListener('resize', topoResizeCanvas);
-                if (!_nodes['SERVER']) _nodes['SERVER'] = mkNode('SERVER', 'SERVER', 'Server');
-                _loop();
-            }
-            if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+            window.topoResizeCanvas=function(){if(!_canvas)return;var rect=_canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;_canvas.width=rect.width*dpr;_canvas.height=rect.height*dpr;_ctx.setTransform(dpr,0,0,dpr,0,0);_W=rect.width;_H=rect.height;};
+            document.addEventListener('DOMContentLoaded',function(){
+                _canvas=document.getElementById('topology-canvas');_ctx=_canvas.getContext('2d');topoResizeCanvas();
+                _canvas.addEventListener('mousedown',e=>{_panDrag={sx:e.clientX,sy:e.clientY,px:_pan.x,py:_pan.y};});
+                _canvas.addEventListener('mousemove',e=>{if(_panDrag){_pan.x=_panDrag.px+(e.clientX-_panDrag.sx);_pan.y=_panDrag.py+(e.clientY-_panDrag.sy);}});
+                _canvas.addEventListener('mouseup',()=>_panDrag=null);_canvas.addEventListener('mouseleave',()=>_panDrag=null);
+                _canvas.addEventListener('wheel',e=>{e.preventDefault();_zoom=Math.max(0.25,Math.min(3.5,_zoom*(e.deltaY<0?1.1:0.91)));},{passive:false});
+                window.addEventListener('resize',topoResizeCanvas);if(!_nodes['SERVER'])_nodes['SERVER']=mkNode('SERVER','SERVER','Server');_loop();
+            });
         })();
 
-        /* ────────────────────────────────────────────────────────
-            ANALYTICS
-        ──────────────────────────────────────────────────────── */
-        async function initializeAnalyticsSelectors() {
-            try {
-                var zonesRes = await fetch('/api/zones'); var zones = await zonesRes.json();
-                var zoneSelect = document.getElementById('analytics-zone');
-                zones.forEach(function (zone) { var opt = document.createElement('option'); opt.value = zone; opt.innerText = zone; zoneSelect.appendChild(opt); });
-                var typesRes = await fetch('/api/types'); var types = await typesRes.json();
-                var typeSelect = document.getElementById('analytics-type');
-                types.forEach(function (type) { var opt = document.createElement('option'); opt.value = type; opt.innerText = type; typeSelect.appendChild(opt); });
-            } catch (e) { console.error('Failed analytics options:', e); }
-        }
-
-        async function updateAnalyticsSensors() {
-            var zone = document.getElementById('analytics-zone').value;
-            var dataType = document.getElementById('analytics-type').value;
-            try {
-                var queryUrl = '/api/sensors?zone=' + encodeURIComponent(zone) + '&type=' + encodeURIComponent(dataType);
-                var res = await fetch(queryUrl); var sensors = await res.json();
-                var sensorSelect = document.getElementById('analytics-sensor');
-                while (sensorSelect.options.length > 1) sensorSelect.remove(1);
-                sensors.forEach(function (sensor) { var opt = document.createElement('option'); opt.value = sensor; opt.innerText = sensor; sensorSelect.appendChild(opt); });
-            } catch (e) { console.error('Failed sensors:', e); }
-        }
-
-        async function loadAnalytics() {
-            var zone = document.getElementById('analytics-zone').value;
-            var dataType = document.getElementById('analytics-type').value;
-            var sensor = document.getElementById('analytics-sensor').value;
-            try {
-                var queryUrl = '/api/stats?zone=' + encodeURIComponent(zone) + '&type=' + encodeURIComponent(dataType);
-                if (sensor && sensor !== 'ALL') queryUrl += '&sensor=' + encodeURIComponent(sensor);
-                var res = await fetch(queryUrl); var stats = await res.json();
-                if (stats.error) { alert('Error: ' + stats.error); return; }
-                document.getElementById('analytics-results').style.display = 'block';
-                document.getElementById('stat-mean').innerText = stats.mean;
-                document.getElementById('stat-median').innerText = stats.median;
-                document.getElementById('stat-stddev').innerText = stats.stdDev;
-                document.getElementById('stat-min').innerText = stats.min;
-                document.getElementById('stat-max').innerText = stats.max;
-                document.getElementById('stat-count').innerText = stats.count;
-            } catch (e) { alert('Error loading analytics'); }
-        }
-
-        /* ────────────────────────────────────────────────────────
-            BOOT
-        ──────────────────────────────────────────────────────── */
-        initializeAnalyticsSelectors();
-        fetchData();
+        // BOOT
         setInterval(fetchData, 3000);
+        fetchData();
     </script>
 </body>
 </html>
