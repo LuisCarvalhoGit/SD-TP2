@@ -17,26 +17,38 @@ services:
       - urban-net
     
   python-preprocess:
-    build: 
+    build:
       context: ./Services/PreProcessing
     container_name: python-preprocess
-    env_file: 
+    env_file:
       - .env
     ports:
       - "${PORT_PYTHON_PRE:-50051}:50051"
     networks:
       - urban-net
-    
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; stub = grpc.aio.secure_channel('localhost:50051', grpc.ssl_channel_credentials()).insecure_channel(); print('health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
   python-analysis:
     build:
       context: ./Services/Analysis
     container_name: python-analysis
-    env_file: 
+    env_file:
       - .env
     ports:
       - "${PORT_PYTHON_ANALY:-50052}:50052"
     networks:
       - urban-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; stub = grpc.aio.secure_channel('localhost:50052', grpc.ssl_channel_credentials()).insecure_channel(); print('health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
 
   csharp-server: 
     build: 

@@ -211,7 +211,7 @@ class Program {
                     var (exists, zone, _, _, _) = _config.ValidateSensor(sensorId);
 
                     var payloadList = group.Select(item => new Dictionary<string, string> {
-                        { "Timestamp", item.Ts.ToString("o") },
+                        { "Timestamp", item.Ts.ToUniversalTime().ToString("o") },
                         { "Value", item.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) }
                     }).ToList();
 
@@ -244,7 +244,7 @@ class Program {
                     var (_, zone, _, _, _) = _config.ValidateSensor(sensorId);
 
                     var payloadList = snapshot.Select(item => new Dictionary<string, string> {
-                        { "Timestamp", item.Item1.ToString("o") },
+                        { "Timestamp", item.Item1.ToUniversalTime().ToString("o") },
                         { "Value", item.Item2.ToString(System.Globalization.CultureInfo.InvariantCulture) }
                     }).ToList();
 

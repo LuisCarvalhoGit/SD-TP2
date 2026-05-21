@@ -133,12 +133,14 @@ public class DataBaseManager {
 
                     // Mapeamos para o formato que a Dashboard Web espera
                     readingsList.Add(new {
-                        Time = ts.ToString("o"), // Formato ISO 8601 para o JavaScript não se perder
+                        Time = ts.Kind == DateTimeKind.Unspecified ?
+                            DateTime.SpecifyKind(ts, DateTimeKind.Utc).ToString("o") :
+                            ts.ToString("o"),
                         Sensor = sensorId,
-                        Zone = "Campus UTAD",    // Valor mockado (já que não guardas a zona na BD)
+                        Zone = "Campus UTAD",
                         Type = dataType,
-                        Value = val.ToString("0.0"), // Formata o double com 1 casa decimal
-                        Gateway = "G101"         // Valor mockado (já que não guardas o GW na BD)
+                        Value = val.ToString("0.0"),
+                        Gateway = "G101"
                     });
                 }
             }

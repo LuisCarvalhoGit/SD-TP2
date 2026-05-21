@@ -177,41 +177,129 @@
         </section>
 
         <section id="analytics" class="tab-pane">
-            <div class="camera-controls" style="display: flex; gap: 20px; align-items: center;">
-                <div style="flex: 1;">
-                    <label style="color:var(--text-muted);font-weight:bold; display:block; margin-bottom:5px;">Target Sensor</label>
-                    <input type="text" id="ml-sensor" value="S101" style="width:100%;" placeholder="ex: S101">
+            <div class="analytics-header">
+                <h2 style="margin:0;color:var(--text-main);font-size:24px;">ML Analytics Engine</h2>
+                <p style="color:var(--text-muted);margin:5px 0 0;font-size:13px;">Advanced sensor data analysis and risk assessment</p>
+            </div>
+
+            <div class="analysis-controls">
+                <div class="control-group">
+                    <label for="ml-sensor">🎯 Target Sensor</label>
+                    <input type="text" id="ml-sensor" value="S101" placeholder="ex: S101">
                 </div>
-                <div style="flex: 1;">
-                    <label style="color:var(--text-muted);font-weight:bold; display:block; margin-bottom:5px;">Metric to Evaluate</label>
-                    <select id="ml-type" style="width:100%;">
-                        <option value="CO2">CO2 Levels</option>
-                        <option value="TEMP">Temperature</option>
-                        <option value="HUM">Humidity</option>
+
+                <div class="control-group">
+                    <label for="ml-type">📊 Metric to Analyze</label>
+                    <select id="ml-type">
+                        <option value="CO2">CO2 Levels (ppm)</option>
+                        <option value="TEMP">Temperature (°C)</option>
+                        <option value="HUM">Humidity (%)</option>
                         <option value="PM2">Particulate Matter (PM2.5)</option>
                         <option value="UV">UV Index</option>
-                        <option value="NOISE">Noise Level</option>
+                        <option value="NOISE">Noise Level (dB)</option>
                     </select>
                 </div>
-                <div style="margin-top: 25px;">
-                    <button class="add-cam" onclick="runMLAnalysis()">Run Analysis Engine</button>
-                </div>
+
+                <button class="btn-analysis" onclick="runMLAnalysis()">
+                    <span style="font-size:18px;">⚡</span> Run Analysis
+                </button>
             </div>
 
             <div id="analytics-results" style="display:none; margin-top: 30px;">
-                <div id="ml-evaluation" class="ml-badge safe">Loading evaluation...</div>
-                
-                <div class="cards" style="grid-template-columns: repeat(4, 1fr);">
-                    <div class="card" style="border-top-color: #9c27b0;"><h3>Processed Samples</h3><p id="stat-count" style="color:#ce93d8;">--</p></div>
-                    <div class="card"><h3>Historical Mean</h3><p id="stat-mean">--</p></div>
-                    <div class="card"><h3>Max Recorded</h3><p id="stat-max" style="color:var(--danger);">--</p></div>
-                    <div class="card"><h3>Min Recorded</h3><p id="stat-min" style="color:var(--success);">--</p></div>
+                <!-- RISK GAUGE -->
+                <div class="risk-container">
+                    <div class="risk-gauge-wrapper">
+                        <svg viewBox="0 0 200 120" class="risk-gauge">
+                            <defs>
+                                <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                                    <stop offset="0%" style="stop-color:#69f0ae;stop-opacity:1" />
+                                    <stop offset="50%" style="stop-color:#ffeb3b;stop-opacity:1" />
+                                    <stop offset="100%" style="stop-color:#ff5252;stop-opacity:1" />
+                                </linearGradient>
+                            </defs>
+                            <path d="M 20 100 A 80 80 0 0 1 180 100" stroke="url(#gauge-gradient)" stroke-width="12" fill="none" stroke-linecap="round"/>
+                            <circle id="gauge-needle" cx="100" cy="100" r="4" fill="#fff"/>
+                            <text x="100" y="115" text-anchor="middle" fill="var(--text-muted)" font-size="11">Risk Level</text>
+                        </svg>
+                        <div id="risk-value-display" style="text-align:center;margin-top:15px;font-size:28px;font-weight:bold;color:var(--accent-primary);">--</div>
+                    </div>
+                    <div class="risk-description">
+                        <div id="ml-evaluation-detailed" style="font-size:13px;color:var(--text-muted);line-height:1.6;"></div>
+                    </div>
                 </div>
 
+                <!-- KEY STATISTICS GRID -->
+                <div class="stats-grid">
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-icon">📈</span>
+                            <span class="stat-title">Mean Value</span>
+                        </div>
+                        <div class="stat-value" id="stat-mean">--</div>
+                        <div class="stat-unit" id="stat-mean-unit"></div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-icon">📊</span>
+                            <span class="stat-title">Sample Count</span>
+                        </div>
+                        <div class="stat-value" id="stat-count">--</div>
+                        <div class="stat-unit">data points</div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-icon">⬆️</span>
+                            <span class="stat-title">Peak Value</span>
+                        </div>
+                        <div class="stat-value" id="stat-max" style="color:var(--danger);">--</div>
+                        <div class="stat-unit" id="stat-max-unit"></div>
+                    </div>
+
+                    <div class="stat-card">
+                        <div class="stat-header">
+                            <span class="stat-icon">⬇️</span>
+                            <span class="stat-title">Floor Value</span>
+                        </div>
+                        <div class="stat-value" id="stat-min" style="color:var(--success);">--</div>
+                        <div class="stat-unit" id="stat-min-unit"></div>
+                    </div>
+                </div>
+
+                <!-- RANGE VISUALIZATION -->
+                <div class="range-visualization">
+                    <div class="range-header">
+                        <span>📏 Value Distribution</span>
+                        <span id="range-label" style="color:var(--text-muted);font-size:12px;">--</span>
+                    </div>
+                    <div class="range-bar">
+                        <div id="range-track" style="position:relative;height:30px;background:rgba(138,145,184,0.2);border-radius:15px;overflow:hidden;">
+                            <div id="range-min-marker" style="position:absolute;left:0%;top:50%;transform:translateY(-50%);width:4px;height:100%;background:var(--success);"></div>
+                            <div id="range-mean-marker" style="position:absolute;left:50%;top:50%;transform:translateY(-50%);width:3px;height:40px;background:var(--accent-primary);border-radius:2px;"></div>
+                            <div id="range-max-marker" style="position:absolute;right:0%;top:50%;transform:translateY(-50%);width:4px;height:100%;background:var(--danger);"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- INSIGHT BOX -->
+                <div class="insight-box">
+                    <div style="display:flex;gap:10px;align-items:flex-start;">
+                        <span style="font-size:20px;">💡</span>
+                        <div>
+                            <div style="font-weight:bold;color:var(--accent-primary);margin-bottom:5px;">Analysis Summary</div>
+                            <div id="ml-message" style="color:var(--text-muted);font-size:13px;line-height:1.6;"></div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- EXECUTION LOG -->
                 <div class="log-terminal" id="ml-log">
+                    <div style="color:var(--success);font-weight:bold;margin-bottom:5px;">⚙️ Analysis Log</div>
                     > Python Analytics Engine standing by...
                 </div>
             </div>
+        </section>
         </section>
     </main>
 
@@ -240,16 +328,53 @@
             if (tabId === 'topology') { topoResizeCanvas(); topoSyncGraph(); }
         }
 
-        // Tenta obter o estado global se a rota existir no C# (Graceful Degradation)
+        var fetchFailures = 0;
+        var maxFetchFailures = 5;
+
         async function fetchData() {
             try {
-                var res = await fetch('/api/status');
-                if (res.ok) {
-                    globalData = await res.json();
-                    updateDashboard();
-                    if (document.getElementById('topology').classList.contains('active')) topoSyncGraph();
+                var res = await fetch('/api/status', { timeout: 5000 });
+
+                if (!res.ok) {
+                    fetchFailures++;
+                    console.warn(`[API ERROR] Status ${res.status}. Attempt ${fetchFailures}/${maxFetchFailures}`);
+                    if (fetchFailures > maxFetchFailures) {
+                        showError('API unavailable. Please check server connection.');
+                    }
+                    return;
                 }
-            } catch (e) { /* Ignora falhas se a rota /api/status ainda não estiver no C# */ }
+
+                var data = await res.json();
+
+                if (!data || !Array.isArray(data.readings)) {
+                    console.warn('[DATA ERROR] Invalid response structure');
+                    return;
+                }
+
+                globalData = data;
+                fetchFailures = 0;
+                updateDashboard();
+                if (document.getElementById('topology').classList.contains('active')) topoSyncGraph();
+
+            } catch (e) {
+                fetchFailures++;
+                console.error(`[FETCH ERROR] ${e.message}. Attempt ${fetchFailures}/${maxFetchFailures}`);
+                if (fetchFailures > maxFetchFailures) {
+                    showError('Connection lost. Retrying...');
+                }
+            }
+        }
+
+        function showError(message) {
+            var errorEl = document.getElementById('api-error');
+            if (!errorEl) {
+                errorEl = document.createElement('div');
+                errorEl.id = 'api-error';
+                errorEl.style.cssText = 'position:fixed;top:20px;right:20px;background:#ff5252;color:white;padding:15px;border-radius:8px;z-index:100;max-width:300px;';
+                document.body.appendChild(errorEl);
+            }
+            errorEl.innerText = message;
+            setTimeout(() => errorEl.style.display = 'none', 5000);
         }
 
         function updateDashboard() {

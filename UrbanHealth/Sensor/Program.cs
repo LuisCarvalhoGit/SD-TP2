@@ -134,11 +134,11 @@ class Program {
 
             var payload = new {
                 SID = SID,
-                Timestamp = DateTime.Now.ToString("o"),
+                Timestamp = DateTime.UtcNow.ToString("o"),
                 Type = type,
                 Value = value,
-                Action = action, // Used for STRM START/STOP
-                ImageData = base64Image // Used to send video frames
+                Action = action,
+                ImageData = base64Image
             };
 
             string json = JsonSerializer.Serialize(payload);

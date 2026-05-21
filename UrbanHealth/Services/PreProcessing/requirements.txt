@@ -1,2 +1,4 @@
-grpcio
-grpcio-tools
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=3.20.0
+python-json-logger>=2.0.7

@@ -63,10 +63,10 @@ class Program {
 
                     if (payloadList != null) {
                         foreach (var item in payloadList) {
-                            if (DateTime.TryParse(item["Timestamp"], null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime ts) &&
+                            if (DateTime.TryParse(item["Timestamp"], null, System.Globalization.DateTimeStyles.RoundtripKind | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime ts) &&
                                 double.TryParse(item["Value"], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val)) {
 
-                                _db.SaveReading(sensorId, dataType, val, ts);
+                                _db.SaveReading(sensorId, dataType, val, ts.ToUniversalTime());
                             }
                         }
                         Console.WriteLine($"[CLOUD] Saved {payloadList.Count} '{dataType}' metrics from {sensorId} to database.");
@@ -126,10 +126,25 @@ class Program {
                     // Usa a tua abstração como deve ser!
                     var readingsList = _db.GetRecentReadings(20);
 
+                    var gatewaySet = new HashSet<string>();
+                    var sensorSet = new HashSet<string>();
+                    foreach (var r in readingsList) {
+                        dynamic row = r;
+                        gatewaySet.Add(row.Gateway);
+                        sensorSet.Add(row.Sensor);
+                    }
+
                     var statusData = new {
-                        gatewaysOnline = new string[] { "G101" },
+                        gatewaysOnline = gatewaySet.ToArray(),
                         activeSensors = readingsList.Select(r => new { Sensor = ((dynamic)r).Sensor, Gateway = ((dynamic)r).Gateway }).Distinct().ToArray(),
-                        readings = readingsList
+                        readings = readingsList.Select(r => new {
+                            Time = ((dynamic)r).Timestamp,
+                            Sensor = ((dynamic)r).Sensor,
+                            Zone = ((dynamic)r).Zone,
+                            Type = ((dynamic)r).DataType,
+                            Value = ((dynamic)r).Value,
+                            Gateway = ((dynamic)r).Gateway
+                        }).ToArray()
                     };
 
                     string jsonResponse = JsonSerializer.Serialize(statusData);
