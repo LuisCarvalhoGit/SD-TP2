@@ -13,6 +13,10 @@ using Microsoft.Data.Sqlite; // O namespace gerado pelo analysis.proto
 class Program {
     private static DataBaseManager _db = new DataBaseManager();
     private static AnalysisService.AnalysisServiceClient _rpcClient;
+
+    private static System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> _latestServerFrames = new();
+
+    
     static async Task Main(string[] args) {
         Console.WriteLine("[SYSTEM] Central Cloud Server Starting...");
 
@@ -25,6 +29,8 @@ class Program {
         // 2. Iniciar rotinas em paralelo
         _ = Task.Run(StartGatewayTcpListenerAsync);
         await StartWebDashboardApiAsync();
+
+        _ = Task.Run(StartUdpListenerAsync);
     }
 
     // ==========================================================
@@ -54,6 +60,11 @@ class Program {
                 try {
                     var msg = await Message.ReceiveMessageAsync(client);
                     if (msg == null) break;
+
+                    if (msg.CMD == "VIDEO" && msg.Data.ContainsKey("IMAGE")) {
+                            try { _latestServerFrames[msg.SID] = Convert.FromBase64String(msg.Data["IMAGE"]); } catch { }
+                            continue; 
+                        }
 
                     if (msg.CMD == "FWD" && msg.Data.ContainsKey("RAW_PAYLOAD")) {
                         string sensorId = msg.SID;
@@ -94,6 +105,20 @@ class Program {
         }
     }
 
+    private static async Task StartUdpListenerAsync() {
+        int port = int.Parse(Environment.GetEnvironmentVariable("PORT_SERVER_TCP") ?? "5001");
+        using var udpServer = new UdpClient(port);
+        Console.WriteLine($"[UDP] Video listener active on port {port}...");
+
+        while (true) {
+            var result = await udpServer.ReceiveAsync();
+            // O sensor envia o frame. Como o UDP não tem cabeçalho de SID no payload binário,
+            // podes simplificar o protocolo enviando SID:IMAGE ou usar um SID fixo por porta.
+            // Se quiseres manter simples, usa o ConcurrentDictionary como já tens:
+            _latestServerFrames["S101"] = result.Buffer; 
+        }
+    }
+
     // ==========================================================
     // 2. WEB API (Interface para o utilizador contactar o Python)
     // ==========================================================
@@ -117,6 +142,19 @@ class Program {
         res.AppendHeader("Access-Control-Allow-Origin", "*");
 
         try {
+
+            if (req.Url.AbsolutePath.StartsWith("/image/")) {
+                    string sid = req.Url.AbsolutePath.Split('/').Last().ToUpper();
+                    if (_latestServerFrames.TryGetValue(sid, out byte[] imgBytes)) {
+                        res.ContentType = "image/jpeg";
+                        res.ContentLength64 = imgBytes.Length;
+                        await res.OutputStream.WriteAsync(imgBytes, 0, imgBytes.Length);
+                    } else {
+                        res.StatusCode = 404;
+                    }
+                    res.Close();
+                    return;
+                }
 
             if (req.Url.AbsolutePath == "/" || req.Url.AbsolutePath.ToLower() == "/index.html") {
                 // Ajusta "index.html" para o nome exato do teu ficheiro

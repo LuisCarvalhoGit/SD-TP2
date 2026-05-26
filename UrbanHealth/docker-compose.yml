@@ -93,6 +93,8 @@ services:
     container_name: csharp-sensor
     env_file: 
       - .env
+    volumes:
+      - ./Sensor/Frames:/app/Frames
     stdin_open: true
     tty: true
     depends_on:

@@ -33,6 +33,8 @@ class Program {
     private static readonly IPAddress ServerIp = System.Net.Dns.GetHostAddresses(RawServerIp)[0]; 
     private static readonly int ServerPort = int.Parse(Environment.GetEnvironmentVariable("SERVER_PORT") ?? "5001");
 
+    private static IModel _rmqChannel;
+
     // Upstream Cloud Server Connection
     private static TcpClient _serverClient;
     private static readonly SemaphoreSlim _serverTxLock = new SemaphoreSlim(1, 1);
@@ -91,10 +93,11 @@ class Program {
 
     private static void StartRabbitMQConsumer() {
         var factory = new ConnectionFactory() {
-        HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
-        UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
-        Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest"
-    };
+            HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+            UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
+            Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
+            DispatchConsumersAsync = true 
+        };
 
         int maxRetries = _config.GatewayInfo.Rabbitmq.ConnectionRetries;
         int delayMs = _config.GatewayInfo.Rabbitmq.RetryDelayMs;
@@ -105,26 +108,19 @@ class Program {
                 Console.WriteLine($"[RABBITMQ] Gateway attempting to connect to {factory.HostName}... (Attempt {i}/{maxRetries})");
                 
                 var connection = factory.CreateConnection();
-                var channel = connection.CreateModel();
-
-                channel.ExchangeDeclare(exchange: exchangeName, type: ExchangeType.Topic);
-
-                // Declare an exclusive ephemeral queue for this Gateway instance
-                var queueName = channel.QueueDeclare().QueueName;
-
-                // Faz o binding de todas as chaves dinamicamente
+                _rmqChannel = connection.CreateModel();
+                _rmqChannel.ExchangeDeclare(exchange: exchangeName, type: ExchangeType.Topic);
+                
+                var queueName = _rmqChannel.QueueDeclare().QueueName;
+                
                 foreach (var routingKey in _config.GatewayInfo.Rabbitmq.RoutingKeys) {
-                    channel.QueueBind(queue: queueName, exchange: exchangeName, routingKey: routingKey);
+                    _rmqChannel.QueueBind(queue: queueName, exchange: exchangeName, routingKey: routingKey);
                 }
 
-                // Bind the queue to intercept all sensor data topics
-                channel.QueueBind(queue: queueName, exchange: exchangeName, routingKey: "sensor.#");
-
-                var consumer = new EventingBasicConsumer(channel);
+                var consumer = new EventingBasicConsumer(_rmqChannel);
                 consumer.Received += (model, ea) => {
                     var body = ea.Body.ToArray();
                     var messageJson = Encoding.UTF8.GetString(body);
-
                     try {
                         var payload = JsonSerializer.Deserialize<SensorPayload>(messageJson);
                         ProcessRabbitMQMessage(payload);
@@ -133,10 +129,9 @@ class Program {
                     }
                 };
 
-                channel.BasicConsume(queue: queueName, autoAck: true, consumer: consumer);
+                _rmqChannel.BasicConsume(queue: queueName, autoAck: true, consumer: consumer);
                 Console.WriteLine("[RABBITMQ] Gateway listening to distributed topic events securely.");
-                
-                return; // Ligação bem sucedida! Sai do ciclo de tentativas.
+                return;
 
             } catch (RabbitMQ.Client.Exceptions.BrokerUnreachableException) {
                 Console.WriteLine($"[RABBITMQ WARNING] Broker is still booting. Gateway retrying in {delayMs/1000} seconds...");
@@ -146,22 +141,50 @@ class Program {
                 Thread.Sleep(delayMs);
             }
         }
-
         Console.WriteLine("[RABBITMQ CRITICAL] Infrastructure error: Failed to connect after maximum retries.");
     }
+
+    private static void SendCommandToSensor(string sid, string type, string value) {
+            if (_rmqChannel == null || _rmqChannel.IsClosed) return;
+            var payload = new { Type = type, Value = value };
+            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+            _rmqChannel.BasicPublish(exchange: _config.GatewayInfo.Rabbitmq.Exchange, routingKey: $"cmd.{sid}", basicProperties: null, body: body);
+        }
 
     private static void ProcessRabbitMQMessage(SensorPayload payload) {
         if (payload == null) return;
 
         _activeSensors[payload.SID] = DateTime.Now;
 
-        // Handle incoming raw binary video streams via Base64 mapping
+        if (payload.Type == "STRM_REQ") {
+            var (exists, _, _, supportedTypes, _) = _config.ValidateSensor(payload.SID);
+            if (exists && supportedTypes.Contains("VIDEO")) {
+                Console.WriteLine($"[GATEWAY] Stream authorized for {payload.SID}");
+                SendCommandToSensor(payload.SID, "STRM_GRANT", "OK");
+            } else {
+                Console.WriteLine($"[GATEWAY] Stream DENIED for {payload.SID}");
+                SendCommandToSensor(payload.SID, "STRM_DENIED", "UNAUTHORIZED");
+            }
+            return;
+        }
+
+        // 2. Tratar vídeo recebido e reencaminhar (TÚNEL TCP)
         if (payload.Type == "VIDEO" && !string.IsNullOrEmpty(payload.ImageData)) {
-            try {
+            try { 
                 _latestFrames[payload.SID] = Convert.FromBase64String(payload.ImageData);
+                
+                // ENVIO UDP PARA O SERVIDOR
+                _ = Task.Run(() => {
+                    using (var udpClient = new UdpClient()) {
+                        byte[] data = Convert.FromBase64String(payload.ImageData);
+                        // Assume que o Servidor está à escuta em UDP na mesma porta do ServerPort
+                        udpClient.Send(data, data.Length, RawServerIp, ServerPort);
+                    }
+                });
             } catch { }
             return;
         }
+
 
         // Filter system messaging overhead
         if (payload.Type == "STS" || payload.Type == "HB" || payload.Type == "STRM") {
@@ -363,7 +386,7 @@ class Program {
     private static async Task StartWebServerAsync() {
         try {
             var listener = new HttpListener();
-            listener.Prefixes.Add("http://localhost:8080/");
+            listener.Prefixes.Add("http://+:8080/");
             listener.Start();
             Console.WriteLine("[WEB SERVER] Edge HTTP Streaming service online on port 8080.");
 
@@ -371,6 +394,8 @@ class Program {
                 var context = await listener.GetContextAsync();
                 var req = context.Request;
                 var res = context.Response;
+
+                res.AppendHeader("Access-Control-Allow-Origin", "*");
 
                 try {
                     if (req.Url.AbsolutePath.StartsWith("/stream/")) {

@@ -4,6 +4,7 @@ using System.Text;
 using System.Text.Json;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
+using RabbitMQ.Client.Events;
 
 class Program {
     private static string SID = "S101";
@@ -62,9 +63,9 @@ class Program {
             else if (command == "STRM") {
                 if (parts.Length >= 2) {
                     string action = parts[1].ToUpper();
-                    if (action == "START") {
-                        _isStreaming = true;
-                        Console.WriteLine("[STREAM] Video transmission STARTED manually.");
+                    if (parts[1] == "START") {
+                        Console.WriteLine("[STREAM] Requesting authorization from Gateway...");
+                        PublishMessage("STRM_REQ", "REQUEST");
                     }
                     else if (action == "STOP") {
                         _isStreaming = false;
@@ -107,6 +108,29 @@ class Program {
 
                 // Declare a Topic Exchange
                 _channel.ExchangeDeclare(exchange: ExchangeName, type: ExchangeType.Topic);
+
+                var queueName = _channel.QueueDeclare().QueueName;
+                    _channel.QueueBind(queue: queueName, exchange: ExchangeName, routingKey: $"cmd.{SID}");
+
+                    var consumer = new EventingBasicConsumer(_channel);
+                    consumer.Received += (model, ea) => {
+                        var body = ea.Body.ToArray();
+                        var json = Encoding.UTF8.GetString(body);
+                        try {
+                            using var doc = JsonDocument.Parse(json);
+                            var type = doc.RootElement.GetProperty("Type").GetString();
+
+                            if (type == "STRM_GRANT") {
+                                _isStreaming = true;
+                                Console.WriteLine("[STREAM] GRANTED by Gateway. Starting video.");
+                            } 
+                            else if (type == "STRM_DENIED") {
+                                _isStreaming = false;
+                                Console.WriteLine("[STREAM] DENIED by Gateway.");
+                            }
+                        } catch { }
+                    };
+                    _channel.BasicConsume(queue: queueName, autoAck: true, consumer: consumer);
 
                 Console.WriteLine("[RABBITMQ] Connection established securely!");
                 return;
@@ -203,10 +227,12 @@ class Program {
             Console.WriteLine($"[SENSOR] High level of {dataType} detected! Starting video...");
             _lastAlertTime = DateTime.Now;
 
-            if (!_isStreaming) {
-                _isStreaming = true;
-                PublishMessage("STRM", "", action: "START");
+            // Ask gateway for permission
+            if (!_isStreaming)
+            {
+                PublishMessage("STRM_REQ", "EMERGENCY");
             }
+
         }
         else if (_isStreaming && (DateTime.Now - _lastAlertTime).TotalSeconds > 30) {
             Console.WriteLine("[STREAM] Environment stabilized for 30s. Stopping video...");
