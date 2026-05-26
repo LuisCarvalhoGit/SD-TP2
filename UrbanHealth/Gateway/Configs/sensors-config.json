@@ -1,0 +1,18 @@
+{
+    "sensors": [
+        {
+            "id": "S101",
+            "zone": "ZONA_1",
+            "satate": "offline",
+            "dataTypes": "TEMP,HUM,PM2,CO2,NOISE,UV,VIDEO",
+            "lastSync": "2026-05-20T08:34:51"
+        },
+        {
+            "id": "S102",
+            "zone": "ZONA_2",
+            "state": "offline",
+            "dataTypes": "TEMP,HUM,PM2,CO2,NOISE,UV,VIDEO",
+            "lastSync": "2026-05-21T09:22:15"
+        }
+    ]
+}

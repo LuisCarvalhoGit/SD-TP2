@@ -16,15 +16,21 @@ public class DataBaseManager {
         using (var connection = new SqliteConnection(_connectionString)) {
             connection.Open();
 
+            using (var cmd = new SqliteCommand("PRAGMA journal_mode=WAL;", connection)) {
+                cmd.ExecuteNonQuery();
+            }
+
             // Tabela Original de Leituras Raw
             string createReadingsTable = @"
                 CREATE TABLE IF NOT EXISTS SensorReadings (
-                    Id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    SensorId TEXT NOT NULL,
-                    DataType TEXT NOT NULL,
-                    Value REAL NOT NULL,
-                    Timestamp DATETIME NOT NULL
-                );";
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                SensorId TEXT NOT NULL,
+                Gateway TEXT NOT NULL,
+                Zone TEXT NOT NULL,
+                DataType TEXT NOT NULL,
+                Value REAL NOT NULL,
+                Timestamp DATETIME NOT NULL
+            );";
 
             // Nova Tabela para Análises da Fase 3
             string createAnalysisTable = @"
@@ -46,13 +52,15 @@ public class DataBaseManager {
         Console.WriteLine("[DB] SQLite Database initialized securely.");
     }
 
-    public void SaveReading(string sensorId, string dataType, double value, DateTime timestamp) {
+    public void SaveReading(string sensorId, string gateway, string zone, string dataType, double value, DateTime timestamp) {
         using (var connection = new SqliteConnection(_connectionString)) {
             connection.Open();
-            string insertQuery = "INSERT INTO SensorReadings (SensorId, DataType, Value, Timestamp) VALUES (@s, @d, @v, @t)";
+            string insertQuery = "INSERT INTO SensorReadings (SensorId, Gateway, Zone, DataType, Value, Timestamp) VALUES (@s, @g, @z, @d, @v, @t)";
 
             using (var cmd = new SqliteCommand(insertQuery, connection)) {
                 cmd.Parameters.AddWithValue("@s", sensorId);
+                cmd.Parameters.AddWithValue("@g", gateway);
+                cmd.Parameters.AddWithValue("@z", zone);
                 cmd.Parameters.AddWithValue("@d", dataType);
                 cmd.Parameters.AddWithValue("@v", value);
                 cmd.Parameters.AddWithValue("@t", timestamp);
@@ -117,35 +125,34 @@ public class DataBaseManager {
             connection.Open();
             var command = connection.CreateCommand();
             
-            // Usamos os nomes REAIS das colunas da tua tabela SensorReadings
-            command.CommandText = "SELECT Timestamp, SensorId, DataType, Value FROM SensorReadings ORDER BY Timestamp DESC LIMIT @limit";
+            // Agora selecionamos as 6 colunas
+            command.CommandText = "SELECT Timestamp, SensorId, Gateway, Zone, DataType, Value FROM SensorReadings ORDER BY Timestamp DESC LIMIT @limit";
             command.Parameters.AddWithValue("@limit", limit);
             
             using (var reader = command.ExecuteReader())
             {
                 while (reader.Read())
                 {
-                    // Lemos os dados corretos da BD
                     DateTime ts = reader.GetDateTime(0);
                     string sensorId = reader.GetString(1);
-                    string dataType = reader.GetString(2);
-                    double val = reader.GetDouble(3);
+                    string gateway = reader.GetString(2);
+                    string zone = reader.GetString(3);
+                    string dataType = reader.GetString(4);
+                    double val = reader.GetDouble(5);
 
-                    // Mapeamos para o formato que a Dashboard Web espera
                     readingsList.Add(new {
                         Time = ts.Kind == DateTimeKind.Unspecified ?
                             DateTime.SpecifyKind(ts, DateTimeKind.Utc).ToString("o") :
                             ts.ToString("o"),
                         Sensor = sensorId,
-                        Zone = "Campus UTAD",
+                        Zone = zone,          // Valor real da BD
                         Type = dataType,
                         Value = val.ToString("0.0"),
-                        Gateway = "G101"
+                        Gateway = gateway     // Valor real da BD
                     });
                 }
             }
         }
         return readingsList;
     }
-
 }

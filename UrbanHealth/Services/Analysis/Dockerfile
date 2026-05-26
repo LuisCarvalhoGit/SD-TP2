@@ -1,9 +1,15 @@
 FROM python:3.11-slim
 WORKDIR /app
-# FORÇA O PYTHON A MOSTRAR OS LOGS IMEDIATAMENTE NO DOCKER
 ENV PYTHONUNBUFFERED=1
-COPY requirements.txt .
+
+# Ajustar os caminhos porque o contexto agora é a pasta /Services
+COPY Analysis/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
-# O ficheiro server.py já tem de ter os _pb2 gerados
+
+# Copiar o código específico do serviço
+COPY Analysis/ .
+
+# Copiar a pasta shared para dentro do contentor
+COPY shared/ ./shared/
+
 CMD ["python", "server.py"]

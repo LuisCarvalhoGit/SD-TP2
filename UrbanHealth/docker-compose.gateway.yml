@@ -1,0 +1,50 @@
+networks:
+  urban-edge:
+    driver: bridge
+
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "${PORT_RABBITMQ:-5672}:5672"
+      - "${PORT_RABBITMQ_WEB:-15672}:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
+      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+    networks:
+      - urban-edge
+    
+  python-preprocess:
+    build:
+      context: ./Services
+      dockerfile: PreProcessing/Dockerfile
+    container_name: python-preprocess
+    env_file:
+      - .env.gateway
+    ports:
+      - "${PORT_PYTHON_PRE:-50051}:50051"
+    networks:
+      - urban-edge
+    healthcheck:
+      test: ["CMD", "python", "-c", "import grpc; stub = grpc.aio.secure_channel('localhost:50051', grpc.ssl_channel_credentials()).insecure_channel(); print('health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    
+  csharp-gateway:
+    build: 
+      context: .
+      dockerfile: Gateway/Dockerfile
+    container_name: csharp-gateway
+    env_file: 
+      - .env.gateway
+    volumes:
+      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway_config.json
+      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors_config.json
+    depends_on:
+      - rabbitmq
+      - python-preprocess
+    networks:
+      - urban-edge

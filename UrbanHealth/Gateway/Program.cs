@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Net.Sockets;
+using System.Security.Principal;
 using System.Text;
 using System.Text.Json;
 using System.Threading;
@@ -27,7 +28,7 @@ public class SensorPayload {
 
 class Program {
     // Gateway Configuration Variables
-    private static readonly string GID = Environment.GetEnvironmentVariable("GATEWAY_ID") ?? "G101";
+    private static string GID;
     private static readonly string RawServerIp = Environment.GetEnvironmentVariable("SERVER_IP") ?? "127.0.0.1";
     private static readonly IPAddress ServerIp = System.Net.Dns.GetHostAddresses(RawServerIp)[0]; 
     private static readonly int ServerPort = int.Parse(Environment.GetEnvironmentVariable("SERVER_PORT") ?? "5001");
@@ -49,6 +50,7 @@ class Program {
 
     static async Task Main(string[] args) {
         _config.LoadConfig();
+        GID =_config.GatewayInfo.GatewayId;
 
         Console.WriteLine($"[SYSTEM] Starting Gateway {GID}...");
 
@@ -94,8 +96,9 @@ class Program {
         Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest"
     };
 
-        int maxRetries = 20;
-        int delayMs = 3000;
+        int maxRetries = _config.GatewayInfo.Rabbitmq.ConnectionRetries;
+        int delayMs = _config.GatewayInfo.Rabbitmq.RetryDelayMs;
+        string exchangeName = _config.GatewayInfo.Rabbitmq.Exchange;
 
         for (int i = 1; i <= maxRetries; i++) {
             try {
@@ -104,13 +107,18 @@ class Program {
                 var connection = factory.CreateConnection();
                 var channel = connection.CreateModel();
 
-                channel.ExchangeDeclare(exchange: "urbanhealth_exchange", type: ExchangeType.Topic);
+                channel.ExchangeDeclare(exchange: exchangeName, type: ExchangeType.Topic);
 
                 // Declare an exclusive ephemeral queue for this Gateway instance
                 var queueName = channel.QueueDeclare().QueueName;
 
+                // Faz o binding de todas as chaves dinamicamente
+                foreach (var routingKey in _config.GatewayInfo.Rabbitmq.RoutingKeys) {
+                    channel.QueueBind(queue: queueName, exchange: exchangeName, routingKey: routingKey);
+                }
+
                 // Bind the queue to intercept all sensor data topics
-                channel.QueueBind(queue: queueName, exchange: "urbanhealth_exchange", routingKey: "sensor.#");
+                channel.QueueBind(queue: queueName, exchange: exchangeName, routingKey: "sensor.#");
 
                 var consumer = new EventingBasicConsumer(channel);
                 consumer.Received += (model, ea) => {
@@ -194,8 +202,7 @@ class Program {
     }
 
     private static async Task BatchDataRoutineAsync() {
-        int batchWindowMs = 30000; // Flushes accumulated metrics to cloud every 30 seconds
-
+        int batchWindowMs = _config.GatewayInfo.Timings.BatchIntervalMs;
         while (true) {
             await Task.Delay(batchWindowMs);
 
@@ -217,7 +224,7 @@ class Program {
 
                     var cacheMsg = new Message { CMD = "FWD", SID = sensorId, GID = GID };
                     cacheMsg.Data["TYPE"] = dataType;
-                    cacheMsg.Data["ZONE"] = zone;
+                    cacheMsg.Data["ZONE"] = !string.IsNullOrWhiteSpace(zone) ? zone : "DESCONHECIDA";
                     cacheMsg.Data["BATCH_COUNT"] = payloadList.Count.ToString();
                     cacheMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
 
@@ -250,7 +257,7 @@ class Program {
 
                     var batchMsg = new Message { CMD = "FWD", SID = sensorId, GID = GID };
                     batchMsg.Data["TYPE"] = dataType;
-                    batchMsg.Data["ZONE"] = zone;
+                    batchMsg.Data["ZONE"] = !string.IsNullOrWhiteSpace(zone) ? zone : "DESCONHECIDA";
                     batchMsg.Data["BATCH_COUNT"] = snapshot.Count.ToString();
                     batchMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
 
@@ -307,7 +314,7 @@ class Program {
 
     private static async Task GatewayHeartbeatRoutineAsync() {
         while (true) {
-            await Task.Delay(10000);
+            await Task.Delay(_config.GatewayInfo.Timings.HeartbeatIntervalMs);
             if (_serverClient != null && _serverClient.Connected) {
                 try {
                     var hbMsg = new Message { CMD = "HB", GID = GID };
@@ -320,7 +327,7 @@ class Program {
 
     private static async Task SensorTimeoutMonitorRoutineAsync() {
         while (true) {
-            await Task.Delay(5000); // Scans tracking context states every 5 seconds
+            await Task.Delay(_config.GatewayInfo.Timings.SensorTimeoutCheckMs); // Scans tracking context states every 5 seconds
             bool stateChanged = false;
 
             foreach (var sensor in _activeSensors) {
@@ -332,7 +339,7 @@ class Program {
                 }
             }
             if (stateChanged) {
-                _config.SaveConfig();
+                _config.SaveSensorsConfig();
             }
         }
     }

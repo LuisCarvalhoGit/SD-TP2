@@ -88,11 +88,38 @@
         .cam-feed { width: 100%; aspect-ratio: 16/9; background: #000; object-fit: cover; }
 
         /* NOVO DESIGN DA ABA ANALYTICS */
-        .ml-badge { padding: 10px 20px; border-radius: 8px; font-weight: bold; font-size: 1.2rem; display: inline-block; margin-bottom: 15px; border: 1px solid transparent; }
-        .ml-badge.safe { background: rgba(105, 240, 174, 0.1); color: var(--success); border-color: var(--success); }
-        .ml-badge.warning { background: rgba(255, 235, 59, 0.1); color: var(--warning); border-color: var(--warning); }
-        .ml-badge.danger { background: rgba(255, 82, 82, 0.1); color: var(--danger); border-color: var(--danger); }
-        .log-terminal { background: #000; padding: 15px; border-radius: 8px; font-family: 'Courier New', Courier, monospace; color: var(--success); font-size: 0.9rem; margin-top: 20px; border: 1px solid #333; }
+        /* ==========================================
+           MINIMALIST ML ANALYTICS
+           ========================================== */
+        .ml-filters { display: flex; gap: 20px; align-items: flex-end; background: var(--bg-panel); padding: 20px 25px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.03); }
+        .ml-filter-group { display: flex; flex-direction: column; gap: 8px; flex: 1; max-width: 250px; }
+        .ml-filter-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .ml-filter-group input, .ml-filter-group select { background: rgba(0,0,0,0.2); border: 1px solid var(--bg-hover); padding: 12px 15px; border-radius: 8px; color: #fff; width: 100%; outline: none; transition: 0.2s; box-sizing: border-box; }
+        .ml-filter-group input:focus, .ml-filter-group select:focus { border-color: var(--accent-primary); background: rgba(0,172,193,0.05); }
+        
+        .btn-ml-run { background: var(--accent-primary); color: #fff; border: none; padding: 0 30px; height: 43px; border-radius: 8px; font-weight: 600; cursor: pointer; transition: 0.2s; letter-spacing: 0.5px; }
+        .btn-ml-run:hover { background: var(--accent-secondary); box-shadow: 0 4px 15px rgba(0,172,193,0.3); }
+        
+        .ml-results-grid { display: grid; grid-template-columns: 1.2fr 2fr; gap: 20px; }
+        .ml-card { background: var(--bg-panel); border-radius: 12px; padding: 25px; border: 1px solid rgba(255,255,255,0.03); box-shadow: 0 4px 20px rgba(0,0,0,0.1); }
+        
+        .ml-stat-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px; }
+        .ml-stat-item { display: flex; flex-direction: column; gap: 8px; padding: 20px; background: rgba(0,0,0,0.15); border-radius: 10px; }
+        .ml-stat-label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
+        .ml-stat-value { font-size: 28px; font-weight: bold; color: var(--text-main); font-family: 'Courier New', monospace; }
+        
+        .ml-risk-badge { display: inline-block; padding: 10px 28px; border-radius: 30px; font-weight: bold; border: 1px solid transparent; letter-spacing: 1px; }
+        .ml-risk-badge.safe { background: rgba(105, 240, 174, 0.08); color: var(--success); border-color: rgba(105, 240, 174, 0.2); }
+        .ml-risk-badge.warning { background: rgba(255, 235, 59, 0.08); color: var(--warning); border-color: rgba(255, 235, 59, 0.2); }
+        .ml-risk-badge.danger { background: rgba(255, 82, 82, 0.08); color: var(--danger); border-color: rgba(255, 82, 82, 0.2); }
+        
+        .log-terminal { background: #090a0f; font-family: 'Courier New', monospace; color: #69f0ae; font-size: 13px; line-height: 1.6; border: 1px solid rgba(255,255,255,0.02); height: 180px; overflow-y: auto; }
+        
+        /* Forçar o fundo escuro nas opções do dropdown */
+        .ml-filter-group select option {
+            background-color: var(--bg-panel);
+            color: var(--text-main);
+        }
     </style>
 </head>
 <body>
@@ -177,19 +204,18 @@
         </section>
 
         <section id="analytics" class="tab-pane">
-            <div class="analytics-header">
-                <h2 style="margin:0;color:var(--text-main);font-size:24px;">ML Analytics Engine</h2>
-                <p style="color:var(--text-muted);margin:5px 0 0;font-size:13px;">Advanced sensor data analysis and risk assessment</p>
+            <div class="analytics-header" style="margin-bottom: 25px;">
+                <h2 style="margin:0;color:var(--text-main);font-size:24px;font-weight:600;">ML Analytics Engine</h2>
+                <p style="color:var(--text-muted);margin:5px 0 0;font-size:14px;">Advanced data analysis and anomaly detection.</p>
             </div>
 
-            <div class="analysis-controls">
-                <div class="control-group">
-                    <label for="ml-sensor">🎯 Target Sensor</label>
-                    <input type="text" id="ml-sensor" value="S101" placeholder="ex: S101">
+            <div class="ml-filters">
+                <div class="ml-filter-group">
+                    <label>Target Sensor</label>
+                    <input type="text" id="ml-sensor" value="S101" placeholder="e.g. S101">
                 </div>
-
-                <div class="control-group">
-                    <label for="ml-type">📊 Metric to Analyze</label>
+                <div class="ml-filter-group">
+                    <label>Metric to Analyze</label>
                     <select id="ml-type">
                         <option value="CO2">CO2 Levels (ppm)</option>
                         <option value="TEMP">Temperature (°C)</option>
@@ -199,107 +225,43 @@
                         <option value="NOISE">Noise Level (dB)</option>
                     </select>
                 </div>
-
-                <button class="btn-analysis" onclick="runMLAnalysis()">
-                    <span style="font-size:18px;">⚡</span> Run Analysis
-                </button>
+                <button class="btn-ml-run" onclick="runMLAnalysis()">Run Analysis</button>
             </div>
 
-            <div id="analytics-results" style="display:none; margin-top: 30px;">
-                <!-- RISK GAUGE -->
-                <div class="risk-container">
-                    <div class="risk-gauge-wrapper">
-                        <svg viewBox="0 0 200 120" class="risk-gauge">
-                            <defs>
-                                <linearGradient id="gauge-gradient" x1="0%" y1="0%" x2="100%" y2="0%">
-                                    <stop offset="0%" style="stop-color:#69f0ae;stop-opacity:1" />
-                                    <stop offset="50%" style="stop-color:#ffeb3b;stop-opacity:1" />
-                                    <stop offset="100%" style="stop-color:#ff5252;stop-opacity:1" />
-                                </linearGradient>
-                            </defs>
-                            <path d="M 20 100 A 80 80 0 0 1 180 100" stroke="url(#gauge-gradient)" stroke-width="12" fill="none" stroke-linecap="round"/>
-                            <circle id="gauge-needle" cx="100" cy="100" r="4" fill="#fff"/>
-                            <text x="100" y="115" text-anchor="middle" fill="var(--text-muted)" font-size="11">Risk Level</text>
-                        </svg>
-                        <div id="risk-value-display" style="text-align:center;margin-top:15px;font-size:28px;font-weight:bold;color:var(--accent-primary);">--</div>
+            <div id="analytics-results" style="display:none; flex-direction: column; gap: 20px; margin-top: 20px;">
+                
+                <div class="ml-results-grid">
+                    <div class="ml-card" style="display: flex; flex-direction: column; justify-content: center; align-items: center; text-align: center;">
+                        <h4 style="margin:0; color:var(--text-muted); font-size: 12px; text-transform: uppercase; letter-spacing:1.5px;">Engine Evaluation</h4>
+                        <div id="ml-evaluation" class="ml-risk-badge safe" style="margin-top:20px; font-size: 18px;">--</div>
+                        <p id="ml-message" style="margin-top: 20px; font-size: 14px; color: var(--text-muted); line-height: 1.6; max-width: 90%;"></p>
                     </div>
-                    <div class="risk-description">
-                        <div id="ml-evaluation-detailed" style="font-size:13px;color:var(--text-muted);line-height:1.6;"></div>
-                    </div>
-                </div>
 
-                <!-- KEY STATISTICS GRID -->
-                <div class="stats-grid">
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="stat-icon">📈</span>
-                            <span class="stat-title">Mean Value</span>
+                    <div class="ml-card ml-stat-grid">
+                        <div class="ml-stat-item">
+                            <span class="ml-stat-label">Samples Processed</span>
+                            <span class="ml-stat-value" id="stat-count">--</span>
                         </div>
-                        <div class="stat-value" id="stat-mean">--</div>
-                        <div class="stat-unit" id="stat-mean-unit"></div>
-                    </div>
-
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="stat-icon">📊</span>
-                            <span class="stat-title">Sample Count</span>
+                        <div class="ml-stat-item">
+                            <span class="ml-stat-label">Mean Value</span>
+                            <span class="ml-stat-value" id="stat-mean">--</span>
                         </div>
-                        <div class="stat-value" id="stat-count">--</div>
-                        <div class="stat-unit">data points</div>
-                    </div>
-
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="stat-icon">⬆️</span>
-                            <span class="stat-title">Peak Value</span>
+                        <div class="ml-stat-item">
+                            <span class="ml-stat-label">Peak (Maximum)</span>
+                            <span class="ml-stat-value" id="stat-max" style="color:var(--danger);">--</span>
                         </div>
-                        <div class="stat-value" id="stat-max" style="color:var(--danger);">--</div>
-                        <div class="stat-unit" id="stat-max-unit"></div>
-                    </div>
-
-                    <div class="stat-card">
-                        <div class="stat-header">
-                            <span class="stat-icon">⬇️</span>
-                            <span class="stat-title">Floor Value</span>
-                        </div>
-                        <div class="stat-value" id="stat-min" style="color:var(--success);">--</div>
-                        <div class="stat-unit" id="stat-min-unit"></div>
-                    </div>
-                </div>
-
-                <!-- RANGE VISUALIZATION -->
-                <div class="range-visualization">
-                    <div class="range-header">
-                        <span>📏 Value Distribution</span>
-                        <span id="range-label" style="color:var(--text-muted);font-size:12px;">--</span>
-                    </div>
-                    <div class="range-bar">
-                        <div id="range-track" style="position:relative;height:30px;background:rgba(138,145,184,0.2);border-radius:15px;overflow:hidden;">
-                            <div id="range-min-marker" style="position:absolute;left:0%;top:50%;transform:translateY(-50%);width:4px;height:100%;background:var(--success);"></div>
-                            <div id="range-mean-marker" style="position:absolute;left:50%;top:50%;transform:translateY(-50%);width:3px;height:40px;background:var(--accent-primary);border-radius:2px;"></div>
-                            <div id="range-max-marker" style="position:absolute;right:0%;top:50%;transform:translateY(-50%);width:4px;height:100%;background:var(--danger);"></div>
+                        <div class="ml-stat-item">
+                            <span class="ml-stat-label">Floor (Minimum)</span>
+                            <span class="ml-stat-value" id="stat-min" style="color:var(--success);">--</span>
                         </div>
                     </div>
                 </div>
 
-                <!-- INSIGHT BOX -->
-                <div class="insight-box">
-                    <div style="display:flex;gap:10px;align-items:flex-start;">
-                        <span style="font-size:20px;">💡</span>
-                        <div>
-                            <div style="font-weight:bold;color:var(--accent-primary);margin-bottom:5px;">Analysis Summary</div>
-                            <div id="ml-message" style="color:var(--text-muted);font-size:13px;line-height:1.6;"></div>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- EXECUTION LOG -->
-                <div class="log-terminal" id="ml-log">
-                    <div style="color:var(--success);font-weight:bold;margin-bottom:5px;">⚙️ Analysis Log</div>
-                    > Python Analytics Engine standing by...
+                <div class="ml-card log-terminal" id="ml-log">
+                    <div style="color:var(--text-muted); font-size: 11px; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 1px;">Output Log</div>
+                    <div>> System initialized. Waiting for task dispatch...</div>
                 </div>
             </div>
-        </section>
         </section>
     </main>
 
@@ -462,19 +424,20 @@
         }
         function removeCamera(sid) { clearInterval(cameraIntervals[sid]); delete cameraIntervals[sid]; document.getElementById('box-' + sid).remove(); }
 
-        // NOVA FUNÇÃO ANALYTICS (Conecta-se ao Python via C# API)
         async function runMLAnalysis() {
             const sensor = document.getElementById('ml-sensor').value.toUpperCase();
             const type = document.getElementById('ml-type').value;
             const logBox = document.getElementById('ml-log');
             
-            document.getElementById('analytics-results').style.display = 'block';
-            logBox.innerHTML += `<br>> <strong>[${new Date().toLocaleTimeString()}]</strong> Enviando pedido gRPC para análise de ${type} no sensor ${sensor}...`;
+            // Ativa o layout Flexbox
+            document.getElementById('analytics-results').style.display = 'flex';
+            logBox.innerHTML += `<br>> <strong>[${new Date().toLocaleTimeString()}]</strong> Dispatching gRPC request for ${type} analysis on ${sensor}...`;
+            logBox.scrollTop = logBox.scrollHeight;
             
             try {
                 const response = await fetch(`/api/analyze/${sensor}/${type}`);
                 
-                if (!response.ok) throw new Error("A Base de Dados ainda não tem registos deste tipo ou o gRPC falhou.");
+                if (!response.ok) throw new Error("No data found or gRPC pipeline failed.");
 
                 const data = await response.json();
 
@@ -482,28 +445,38 @@
                 document.getElementById('stat-mean').innerText = data.Statistics.Mean.toFixed(2);
                 document.getElementById('stat-max').innerText = data.Statistics.Max.toFixed(2);
                 document.getElementById('stat-min').innerText = data.Statistics.Min.toFixed(2);
+                document.getElementById('ml-message').innerText = data.MicroserviceMessage;
 
                 const badge = document.getElementById('ml-evaluation');
                 badge.innerText = data.Evaluation;
-                badge.className = 'ml-badge'; // reset
+                badge.className = 'ml-risk-badge'; // Reset classes
                 
                 const evalLower = data.Evaluation.toLowerCase();
-                if (evalLower.includes('normal') || evalLower.includes('seguro')) badge.classList.add('safe');
-                else if (evalLower.includes('moderado') || evalLower.includes('atenção')) badge.classList.add('warning');
-                else badge.classList.add('danger');
+                if (evalLower.includes('normal') || evalLower.includes('seguro') || evalLower.includes('safe')) {
+                    badge.classList.add('safe');
+                }
+                else if (evalLower.includes('moderado') || evalLower.includes('atenção') || evalLower.includes('warning')) {
+                    badge.classList.add('warning');
+                }
+                else {
+                    badge.classList.add('danger');
+                }
 
-                logBox.innerHTML += `<br>> <span style="color:var(--text-main)">Resposta recebida:</span> ${data.MicroserviceMessage}`;
+                logBox.innerHTML += `<br>> <span style="color:var(--text-main)">[SUCCESS]</span> Results received and parsed securely.`;
                 
             } catch (error) {
-                document.getElementById('ml-evaluation').innerText = "Erro na Análise (Sem Dados)";
-                document.getElementById('ml-evaluation').className = 'ml-badge danger';
+                document.getElementById('ml-evaluation').innerText = "Data Unavailable";
+                document.getElementById('ml-evaluation').className = 'ml-risk-badge danger';
+                document.getElementById('ml-message').innerText = "Could not complete the analysis request.";
+                
                 document.getElementById('stat-count').innerText = "0";
                 document.getElementById('stat-mean').innerText = "--";
                 document.getElementById('stat-max').innerText = "--";
                 document.getElementById('stat-min').innerText = "--";
-                logBox.innerHTML += `<br>> <span style="color:var(--danger)">ERRO: ${error.message}</span>`;
+                
+                logBox.innerHTML += `<br>> <span style="color:var(--danger)">[ERROR] ${error.message}</span>`;
             }
-            logBox.scrollTop = logBox.scrollHeight; // Auto-scroll
+            logBox.scrollTop = logBox.scrollHeight;
         }
 
         // TOPOLOGY LOGIC MANTIDA E MINIFICADA POR ORGANIZAÇÃO

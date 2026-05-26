@@ -51,29 +51,44 @@ class Program {
 
         try {
             while (client.Connected) {
-                var msg = await Message.ReceiveMessageAsync(client);
-                if (msg == null) break;
+                try {
+                    var msg = await Message.ReceiveMessageAsync(client);
+                    if (msg == null) break;
 
-                if (msg.CMD == "FWD" && msg.Data.ContainsKey("RAW_PAYLOAD")) {
-                    string sensorId = msg.SID;
-                    string dataType = msg.Data["TYPE"];
-                    string rawJson = msg.Data["RAW_PAYLOAD"];
+                    if (msg.CMD == "FWD" && msg.Data.ContainsKey("RAW_PAYLOAD")) {
+                        string sensorId = msg.SID;
+                        string gatewayId = msg.GID ?? "UNKNOWN";
+                        string rawZone = msg.Data.ContainsKey("ZONE") ? msg.Data["ZONE"] : null;
+                        string zone = !string.IsNullOrWhiteSpace(rawZone) ? rawZone : "DESCONHECIDA";
+                        string dataType = msg.Data["TYPE"];
+                        string rawJson = msg.Data["RAW_PAYLOAD"];
 
-                    var payloadList = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(rawJson);
+                        var payloadList = JsonSerializer.Deserialize<List<Dictionary<string, string>>>(rawJson);
 
-                    if (payloadList != null) {
-                        foreach (var item in payloadList) {
-                            if (DateTime.TryParse(item["Timestamp"], null, System.Globalization.DateTimeStyles.RoundtripKind | System.Globalization.DateTimeStyles.AssumeUniversal, out DateTime ts) &&
-                                double.TryParse(item["Value"], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val)) {
+                        if (payloadList != null) {
+                            foreach (var item in payloadList) {
+                                if (DateTime.TryParse(item["Timestamp"], null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime ts) &&
+                                    double.TryParse(item["Value"], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val)) {
 
-                                _db.SaveReading(sensorId, dataType, val, ts.ToUniversalTime());
+                                    // Agora passamos tudo para a base de dados
+                                    _db.SaveReading(sensorId, gatewayId, zone, dataType, val, ts.ToUniversalTime());
+                                }
                             }
+                            Console.WriteLine($"[CLOUD] Saved {payloadList.Count} '{dataType}' metrics from {sensorId} ({zone}) to database.");
                         }
-                        Console.WriteLine($"[CLOUD] Saved {payloadList.Count} '{dataType}' metrics from {sensorId} to database.");
                     }
+                } 
+                catch (Exception innerEx) {
+                    // Se a BD falhar ou o JSON estiver mal formado, o erro é registado 
+                    // mas o TCP continua ativo a ler a próxima mensagem!
+                    Console.WriteLine($"[PROCESSING ERROR] Failed to process packet: {innerEx.Message}");
                 }
             }
-        } catch (Exception) { } finally {
+        } 
+        catch (Exception ex) { 
+            Console.WriteLine($"[TCP FATAL] {ex.Message}");
+        } 
+        finally {
             client.Close();
             Console.WriteLine($"[TCP] Gateway {endPoint} disconnected.");
         }
@@ -123,28 +138,25 @@ class Program {
 
             if (req.Url.AbsolutePath.ToLower() == "/api/status") {
                 try {
-                    // Usa a tua abstração como deve ser!
                     var readingsList = _db.GetRecentReadings(20);
 
                     var gatewaySet = new HashSet<string>();
-                    var sensorSet = new HashSet<string>();
                     foreach (var r in readingsList) {
                         dynamic row = r;
-                        gatewaySet.Add(row.Gateway);
-                        sensorSet.Add(row.Sensor);
+                        gatewaySet.Add((string)row.Gateway);
                     }
 
                     var statusData = new {
                         gatewaysOnline = gatewaySet.ToArray(),
-                        activeSensors = readingsList.Select(r => new { Sensor = ((dynamic)r).Sensor, Gateway = ((dynamic)r).Gateway }).Distinct().ToArray(),
-                        readings = readingsList.Select(r => new {
-                            Time = ((dynamic)r).Timestamp,
-                            Sensor = ((dynamic)r).Sensor,
-                            Zone = ((dynamic)r).Zone,
-                            Type = ((dynamic)r).DataType,
-                            Value = ((dynamic)r).Value,
-                            Gateway = ((dynamic)r).Gateway
-                        }).ToArray()
+                        
+                        // Extraímos os sensores únicos a partir dos dados já formatados
+                        activeSensors = readingsList.Select(r => new { 
+                            Sensor = (string)((dynamic)r).Sensor, 
+                            Gateway = (string)((dynamic)r).Gateway 
+                        }).Distinct().ToArray(),
+                        
+                        // Passamos a lista diretamente, pois o DataBaseManager já a preparou de forma impecável
+                        readings = readingsList 
                     };
 
                     string jsonResponse = JsonSerializer.Serialize(statusData);

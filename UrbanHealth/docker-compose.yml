@@ -18,7 +18,8 @@ services:
     
   python-preprocess:
     build:
-      context: ./Services/PreProcessing
+      context: ./Services
+      dockerfile: PreProcessing/Dockerfile
     container_name: python-preprocess
     env_file:
       - .env
@@ -35,7 +36,8 @@ services:
 
   python-analysis:
     build:
-      context: ./Services/Analysis
+      context: ./Services
+      dockerfile: Analysis/Dockerfile
     container_name: python-analysis
     env_file:
       - .env
@@ -75,7 +77,8 @@ services:
     env_file: 
       - .env
     volumes:
-      - ./Gateway/sensores.csv:/app/sensores.csv
+      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway_config.json
+      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors_config.json
     depends_on:
       - rabbitmq
       - csharp-server

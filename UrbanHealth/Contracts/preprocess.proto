@@ -21,3 +21,18 @@ message DataResponse {
   double processed_value = 2;
   string message = 3;
 }
+
+// --- Health Check Service ---
+service HealthService {
+  rpc Check (HealthCheckRequest) returns (HealthCheckResponse);
+}
+
+message HealthCheckRequest {
+  // Pedido vazio
+}
+
+message HealthCheckResponse {
+  string status = 1;
+  double uptime_seconds = 2;
+  int32 requests_processed = 3;
+}

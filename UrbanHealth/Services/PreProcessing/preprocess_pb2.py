@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10preprocess.proto\x12\x0burbanhealth\"F\n\x0b\x44\x61taRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x11\n\tdata_type\x18\x02 \x01(\t\x12\x11\n\traw_value\x18\x03 \x01(\x01\"I\n\x0c\x44\x61taResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x17\n\x0fprocessed_value\x18\x02 \x01(\x01\x12\x0f\n\x07message\x18\x03 \x01(\t2Z\n\x14PreProcessingService\x12\x42\n\x0bProcessData\x12\x18.urbanhealth.DataRequest\x1a\x19.urbanhealth.DataResponseb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x10preprocess.proto\x12\x0burbanhealth\"F\n\x0b\x44\x61taRequest\x12\x11\n\tsensor_id\x18\x01 \x01(\t\x12\x11\n\tdata_type\x18\x02 \x01(\t\x12\x11\n\traw_value\x18\x03 \x01(\x01\"I\n\x0c\x44\x61taResponse\x12\x0f\n\x07success\x18\x01 \x01(\x08\x12\x17\n\x0fprocessed_value\x18\x02 \x01(\x01\x12\x0f\n\x07message\x18\x03 \x01(\t\"\x14\n\x12HealthCheckRequest\"Y\n\x13HealthCheckResponse\x12\x0e\n\x06status\x18\x01 \x01(\t\x12\x16\n\x0euptime_seconds\x18\x02 \x01(\x01\x12\x1a\n\x12requests_processed\x18\x03 \x01(\x05\x32Z\n\x14PreProcessingService\x12\x42\n\x0bProcessData\x12\x18.urbanhealth.DataRequest\x1a\x19.urbanhealth.DataResponse2[\n\rHealthService\x12J\n\x05\x43heck\x12\x1f.urbanhealth.HealthCheckRequest\x1a .urbanhealth.HealthCheckResponseb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -35,6 +35,12 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_DATAREQUEST']._serialized_end=103
   _globals['_DATARESPONSE']._serialized_start=105
   _globals['_DATARESPONSE']._serialized_end=178
-  _globals['_PREPROCESSINGSERVICE']._serialized_start=180
-  _globals['_PREPROCESSINGSERVICE']._serialized_end=270
+  _globals['_HEALTHCHECKREQUEST']._serialized_start=180
+  _globals['_HEALTHCHECKREQUEST']._serialized_end=200
+  _globals['_HEALTHCHECKRESPONSE']._serialized_start=202
+  _globals['_HEALTHCHECKRESPONSE']._serialized_end=291
+  _globals['_PREPROCESSINGSERVICE']._serialized_start=293
+  _globals['_PREPROCESSINGSERVICE']._serialized_end=383
+  _globals['_HEALTHSERVICE']._serialized_start=385
+  _globals['_HEALTHSERVICE']._serialized_end=476
 # @@protoc_insertion_point(module_scope)

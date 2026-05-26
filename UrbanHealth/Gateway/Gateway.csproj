@@ -26,5 +26,10 @@
 		<Protobuf Include="..\Contracts\preprocess.proto" GrpcServices="Client" />
 	</ItemGroup>
 	
+  <ItemGroup>
+    <Content Include="Configs\**">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
 
 </Project>

@@ -1,0 +1,16 @@
+networks:
+  urban-sensor:
+    driver: bridge
+
+services:
+  csharp-sensor:
+    build:
+      context: .
+      dockerfile: Sensor/Dockerfile
+    container_name: csharp-sensor
+    env_file: 
+      - .env.sensor
+    stdin_open: true
+    tty: true
+    networks:
+      - urban-sensor
