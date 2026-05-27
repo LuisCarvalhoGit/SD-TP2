@@ -9,10 +9,8 @@ services:
     ports:
       - "${PORT_RABBITMQ:-5672}:5672"
       - "${PORT_RABBITMQ_WEB:-15672}:15672"
-    # O RabbitMQ usa nomes de variáveis diferentes, por isso mapeamos a partir do .env
-    environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+    env_file:
+      - .env.local
     networks:
       - urban-net
     
@@ -22,7 +20,7 @@ services:
       dockerfile: PreProcessing/Dockerfile
     container_name: python-preprocess
     env_file:
-      - .env
+      - .env.local
     ports:
       - "${PORT_PYTHON_PRE:-50051}:50051"
     networks:
@@ -40,7 +38,7 @@ services:
       dockerfile: Analysis/Dockerfile
     container_name: python-analysis
     env_file:
-      - .env
+      - .env.local
     ports:
       - "${PORT_PYTHON_ANALY:-50052}:50052"
     networks:
@@ -58,10 +56,11 @@ services:
       dockerfile: Server/Dockerfile
     container_name: csharp-server
     env_file: 
-      - .env
-    ports: 
+      - .env.local
+    ports:
       - "${PORT_SERVER_TCP:-5001}:5001"
       - "${PORT_DASHBOARD:-8081}:8081"
+      - "${PORT_SERVER_UDP:-5003}:5003/udp"
     volumes:
       - "./database_data:/app/data"
     depends_on:
@@ -75,10 +74,12 @@ services:
       dockerfile: Gateway/Dockerfile
     container_name: csharp-gateway
     env_file: 
-      - .env
+      - .env.local
     volumes:
-      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway_config.json
-      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors_config.json
+      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway-config.json
+      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors-config.json
+    ports:
+      - "${PORT_GATEWAY_UDP:-5004}:5002/udp"
     depends_on:
       - rabbitmq
       - csharp-server
@@ -92,11 +93,13 @@ services:
       dockerfile: Sensor/Dockerfile
     container_name: csharp-sensor
     env_file: 
-      - .env
+      - .env.local
     volumes:
       - ./Sensor/Frames:/app/Frames
     stdin_open: true
     tty: true
+    ports:
+      - "${PORT_SENSOR_UDP:-5002}:5002/udp"
     depends_on:
       - rabbitmq
     networks:

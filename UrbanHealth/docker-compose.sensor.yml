@@ -8,8 +8,10 @@ services:
       context: .
       dockerfile: Sensor/Dockerfile
     container_name: csharp-sensor
-    env_file: 
-      - .env.sensor
+    env_file:
+      - .env.sensor.local
+    ports:
+      - "${PORT_SENSOR_UDP:-5002}:5002/udp"
     volumes:
       - ./Frames:/app/Frames
     stdin_open: true

@@ -38,11 +38,13 @@ services:
       context: .
       dockerfile: Gateway/Dockerfile
     container_name: csharp-gateway
-    env_file: 
-      - .env.gateway
+    env_file:
+      - .env.gateway.local
     volumes:
       - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway_config.json
       - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors_config.json
+    ports:
+      - "${PORT_GATEWAY_UDP:-5002}:5002/udp"
     depends_on:
       - rabbitmq
       - python-preprocess

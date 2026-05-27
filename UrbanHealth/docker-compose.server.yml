@@ -9,7 +9,7 @@ services:
       dockerfile: Analysis/Dockerfile
     container_name: python-analysis
     env_file:
-      - .env.cloud
+      - .env.server.local
     ports:
       - "${PORT_PYTHON_ANALY:-50052}:50052"
     networks:
@@ -26,11 +26,12 @@ services:
       context: .
       dockerfile: Server/Dockerfile
     container_name: csharp-server
-    env_file: 
-      - .env.cloud
-    ports: 
+    env_file:
+      - .env.server.local
+    ports:
       - "${PORT_SERVER_TCP:-5001}:5001"
       - "${PORT_DASHBOARD:-8081}:8081"
+      - "${PORT_SERVER_UDP:-5003}:5003/udp"
     volumes:
       - "./database_data:/app/data"
     depends_on:
