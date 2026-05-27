@@ -1,5 +1,7 @@
 ﻿using System;
 using System.IO;
+using System.Collections.Generic;
+using System.Linq;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
@@ -20,7 +22,23 @@ class Program {
     private const string ExchangeName = "urbanhealth_exchange";
 
     private static string GatewayIp = Environment.GetEnvironmentVariable("GATEWAY_IP") ?? "127.0.0.1";
-    private static int GatewayUdpPort = int.Parse(Environment.GetEnvironmentVariable("GATEWAY_UDP_PORT") ?? "5002");
+    private static int GatewayUdpPort = GetIntEnv("GATEWAY_UDP_PORT", 5004);
+    private static int VideoFrameIntervalMs = GetIntEnv("VIDEO_FRAME_INTERVAL_MS", 200);
+    private static int VideoPacketDelayMs = GetIntEnv("VIDEO_PACKET_DELAY_MS", 0);
+    private static int VideoChunkSize = GetIntEnv("VIDEO_UDP_CHUNK_SIZE", 1200);
+    private static int VideoFrameCacheReloadMs = GetIntEnv("VIDEO_FRAME_CACHE_RELOAD_MS", 30000);
+    private static bool StreamAutoStopEnabled = GetBoolEnv("STREAM_AUTO_STOP_ENABLED", true);
+    private static int StreamAutoStopAfterSeconds = GetIntEnv("STREAM_AUTO_STOP_AFTER_SECONDS", 30);
+
+    private sealed class CachedVideoFrame {
+        public CachedVideoFrame(string name, byte[] bytes) {
+            Name = name;
+            Bytes = bytes;
+        }
+
+        public string Name { get; }
+        public byte[] Bytes { get; }
+    }
 
     static async Task Main(string[] args) {
         if (args.Length >= 1) SID = args[0];
@@ -69,6 +87,7 @@ class Program {
                 string action = parts[1].ToUpper();
                 if (action == "START") {
                     Console.WriteLine("[STREAM] Requesting authorization from Gateway via RMQ...");
+                    _lastAlertTime = DateTime.MaxValue;
                     PublishMessage("STRM_REQ", "REQUEST");
                 }
                 else if (action == "STOP") {
@@ -95,10 +114,20 @@ class Program {
         var factory = new ConnectionFactory() {
             HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
             UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
-            Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest"
+            Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
+            AutomaticRecoveryEnabled = true,
+            TopologyRecoveryEnabled = true,
+            NetworkRecoveryInterval = TimeSpan.FromSeconds(5),
+            RequestedHeartbeat = TimeSpan.FromSeconds(15)
         };
 
-        for (int i = 0; i <= 20; i++) {
+        Console.WriteLine($"[DEBUG] A iniciar ligação ao RabbitMQ em: {factory.HostName}...");
+
+        int attempt = 0;
+        int delayMs = 1000;
+
+        while (true) {
+            attempt++;
             try {
                 _rmqConnection = factory.CreateConnection();
                 _channel = _rmqConnection.CreateModel();
@@ -126,14 +155,24 @@ class Program {
                     } catch { }
                 };
                 _channel.BasicConsume(queue: queueName, autoAck: true, consumer: consumer);
+                
+                Console.WriteLine("[SYSTEM] Ligação ao RabbitMQ estabelecida com sucesso!");
                 return;
-            } catch {
-                Thread.Sleep(3000);
+            } catch (Exception ex) {
+                int sleepMs = delayMs + Random.Shared.Next(0, 750);
+                Console.WriteLine($"[DEBUG] Tentativa RabbitMQ {attempt} falhou: {ex.Message}. Nova tentativa em {sleepMs}ms.");
+                Thread.Sleep(sleepMs);
+                delayMs = Math.Min(delayMs * 2, 30000);
             }
         }
     }
 
     private static void PublishMessage(string type, string value, string action = null) {
+        if (_channel == null || !_channel.IsOpen) {
+            Console.WriteLine($"[DEBUG RMQ ERROR] Mensagem '{type}' não enviada. O canal RabbitMQ não está instanciado.");
+            return;
+        }
+
         try {
             string routingKey = $"sensor.{SID}.{type}";
             var payload = new {
@@ -182,11 +221,15 @@ class Program {
             _lastAlertTime = DateTime.Now;
             if (!_isStreaming) PublishMessage("STRM_REQ", "EMERGENCY");
         }
-        else if (_isStreaming && (DateTime.Now - _lastAlertTime).TotalSeconds > 30) {
-            Console.WriteLine("[STREAM] Environment stabilized for 30s. Stopping video...");
-            _isStreaming = false;
-            PublishMessage("STRM", "", action: "STOP");
-        }
+        else if (StreamAutoStopEnabled &&
+                 _isStreaming &&
+                 _lastAlertTime != DateTime.MaxValue &&
+                 (DateTime.Now - _lastAlertTime).TotalSeconds > StreamAutoStopAfterSeconds) {
+                Console.WriteLine($"[STREAM] Environment stabilized for {StreamAutoStopAfterSeconds}s. Stopping video...");
+                _isStreaming = false;
+                PublishMessage("STRM", "", action: "STOP");
+                _lastAlertTime = DateTime.MinValue; // Reseta o tempo
+            }
     }
 
     private static async Task VideoStreamRoutineAsync() {
@@ -194,44 +237,85 @@ class Program {
         if (!Directory.Exists(framesFolder)) Directory.CreateDirectory(framesFolder);
 
         using var udpClient = new UdpClient();
-        const int chunkSize = 1400; 
+        long frameId = 0;
+        var cachedFrames = await LoadVideoFramesAsync(framesFolder);
+        DateTime nextFrameReloadUtc = DateTime.UtcNow.AddMilliseconds(VideoFrameCacheReloadMs);
 
         while (true) {
             if (!_isStreaming) {
                 await Task.Delay(1000);
+                if (DateTime.UtcNow >= nextFrameReloadUtc) {
+                    cachedFrames = await LoadVideoFramesAsync(framesFolder);
+                    nextFrameReloadUtc = DateTime.UtcNow.AddMilliseconds(VideoFrameCacheReloadMs);
+                }
                 continue;
             }
 
-            string[] frames = Directory.Exists(framesFolder) ? Directory.GetFiles(framesFolder, "*.jpg") : Array.Empty<string>();
-            if (frames.Length == 0) { await Task.Delay(2000); continue; }
+            if (DateTime.UtcNow >= nextFrameReloadUtc) {
+                cachedFrames = await LoadVideoFramesAsync(framesFolder);
+                nextFrameReloadUtc = DateTime.UtcNow.AddMilliseconds(VideoFrameCacheReloadMs);
+            }
 
-            foreach (var framePath in frames) {
+            if (cachedFrames.Count == 0) { await Task.Delay(2000); continue; }
+
+            foreach (var frame in cachedFrames) {
                 if (!_isStreaming) break;
-                await Task.Delay(200); // 5 FPS
+                await Task.Delay(VideoFrameIntervalMs);
+                frameId++;
 
                 try {
-                    byte[] imageBytes = await File.ReadAllBytesAsync(framePath);
-                    int totalParts = (int)Math.Ceiling((double)imageBytes.Length / chunkSize);
+                    byte[] imageBytes = frame.Bytes;
+                    int totalParts = (int)Math.Ceiling((double)imageBytes.Length / VideoChunkSize);
                     
-                    Console.WriteLine($"[DEBUG UDP] A enviar frame de {Path.GetFileName(framePath)} em {totalParts} pacotes...");
+                    Console.WriteLine($"[DEBUG UDP] A enviar frame de {frame.Name} em {totalParts} pacotes...");
 
                     for (int i = 0; i < totalParts; i++) {
-                        int currentOffset = i * chunkSize;
-                        int size = Math.Min(chunkSize, imageBytes.Length - currentOffset);
-                        byte[] buffer = new byte[size];
-                        Buffer.BlockCopy(imageBytes, currentOffset, buffer, 0, size);
+                        int currentOffset = i * VideoChunkSize;
+                        int size = Math.Min(VideoChunkSize, imageBytes.Length - currentOffset);
 
                         var videoMsg = new Shared.Message { CMD = "STRM", SID = SID, GID = "G101" };
                         videoMsg.Data["TYPE"] = "DATA";
                         videoMsg.Data["PART"] = (i + 1).ToString();
                         videoMsg.Data["TOTAL"] = totalParts.ToString();
-                        videoMsg.BinaryData = buffer;
+                        videoMsg.Data["FRAME"] = frameId.ToString();
 
-                        byte[] packet = videoMsg.ToUdpBytes();
+                        byte[] packet = videoMsg.ToUdpBytes(imageBytes, currentOffset, size);
+
                         await udpClient.SendAsync(packet, packet.Length, GatewayIp, GatewayUdpPort);
+                        if (VideoPacketDelayMs > 0) await Task.Delay(VideoPacketDelayMs);
                     }
                 } catch (Exception ex) { Console.WriteLine($"[DEBUG UDP ERROR] Erro a enviar frame: {ex.Message}"); }
             }
         }
+    }
+
+    private static async Task<List<CachedVideoFrame>> LoadVideoFramesAsync(string framesFolder) {
+        if (!Directory.Exists(framesFolder)) return new List<CachedVideoFrame>();
+
+        var frames = new List<CachedVideoFrame>();
+        string[] files = Directory.GetFiles(framesFolder, "*.jpg").OrderBy(path => path).ToArray();
+
+        foreach (string file in files) {
+            try {
+                frames.Add(new CachedVideoFrame(Path.GetFileName(file), await File.ReadAllBytesAsync(file)));
+            } catch (Exception ex) {
+                Console.WriteLine($"[DEBUG UDP WARNING] Falha a carregar frame {Path.GetFileName(file)}: {ex.Message}");
+            }
+        }
+
+        Console.WriteLine($"[STREAM] {frames.Count} video frames cached from {framesFolder}.");
+        return frames;
+    }
+
+    private static int GetIntEnv(string name, int defaultValue) {
+        return int.TryParse(Environment.GetEnvironmentVariable(name), out int value) ? value : defaultValue;
+    }
+
+    private static bool GetBoolEnv(string name, bool defaultValue) {
+        string raw = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrWhiteSpace(raw)) return defaultValue;
+        return raw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
     }
 }

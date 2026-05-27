@@ -414,15 +414,12 @@
             box.className = 'cam-box'; box.id = 'box-' + sid;
             box.innerHTML = `<div class="cam-header"><span style="color:var(--danger);font-weight:bold;">&#9679; REC | ${sid}</span>
                              <button onclick="removeCamera('${sid}')" style="background:none;color:white;border:none;cursor:pointer;">&#x2716;</button></div>
-                             <img class="cam-feed" id="img-${sid}" src="/image/${sid}?t=${Date.now()}" onerror="this.src=''">`;
+                             <img class="cam-feed" id="img-${sid}" src="/mjpeg/${sid}" onerror="this.src='/image/${sid}?t=' + Date.now()">`;
             document.getElementById('video-wall').appendChild(box);
-            cameraIntervals[sid] = setInterval(() => {
-                var img = document.getElementById('img-' + sid);
-                if (img) img.src = `/image/${sid}?t=${Date.now()}`;
-            }, 200);
+            cameraIntervals[sid] = true;
             document.getElementById('cam-sid').value = '';
         }
-        function removeCamera(sid) { clearInterval(cameraIntervals[sid]); delete cameraIntervals[sid]; document.getElementById('box-' + sid).remove(); }
+        function removeCamera(sid) { delete cameraIntervals[sid]; document.getElementById('box-' + sid).remove(); }
 
         async function runMLAnalysis() {
             const sensor = document.getElementById('ml-sensor').value.toUpperCase();

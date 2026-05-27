@@ -11,6 +11,13 @@ services:
       - "${PORT_RABBITMQ_WEB:-15672}:15672"
     env_file:
       - .env.local
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    restart: unless-stopped
     networks:
       - urban-net
     
@@ -26,11 +33,12 @@ services:
     networks:
       - urban-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; stub = grpc.aio.secure_channel('localhost:50051', grpc.ssl_channel_credentials()).insecure_channel(); print('health')"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 50051), 3); s.close()"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
       start_period: 10s
+    restart: unless-stopped
 
   python-analysis:
     build:
@@ -44,11 +52,12 @@ services:
     networks:
       - urban-net
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; stub = grpc.aio.secure_channel('localhost:50052', grpc.ssl_channel_credentials()).insecure_channel(); print('health')"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 50052), 3); s.close()"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
       start_period: 10s
+    restart: unless-stopped
 
   csharp-server: 
     build: 
@@ -64,7 +73,9 @@ services:
     volumes:
       - "./database_data:/app/data"
     depends_on:
-      - python-analysis
+      python-analysis:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - urban-net
     
@@ -79,11 +90,15 @@ services:
       - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway-config.json
       - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors-config.json
     ports:
-      - "${PORT_GATEWAY_UDP:-5004}:5002/udp"
+      - "${PORT_GATEWAY_UDP:-5004}:5004/udp"
     depends_on:
-      - rabbitmq
-      - csharp-server
-      - python-preprocess
+      rabbitmq:
+        condition: service_healthy
+      python-preprocess:
+        condition: service_healthy
+      csharp-server:
+        condition: service_started
+    restart: unless-stopped
     networks:
       - urban-net
     
@@ -101,6 +116,8 @@ services:
     ports:
       - "${PORT_SENSOR_UDP:-5002}:5002/udp"
     depends_on:
-      - rabbitmq
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - urban-net

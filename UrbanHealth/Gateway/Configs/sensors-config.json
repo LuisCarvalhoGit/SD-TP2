@@ -1,18 +1,18 @@
 {
-    "sensors": [
-        {
-            "id": "S101",
-            "zone": "ZONA_1",
-            "satate": "offline",
-            "dataTypes": "TEMP,HUM,PM2,CO2,NOISE,UV,VIDEO",
-            "lastSync": "2026-05-20T08:34:51"
-        },
-        {
-            "id": "S102",
-            "zone": "ZONA_2",
-            "state": "offline",
-            "dataTypes": "TEMP,HUM,PM2,CO2,NOISE,UV,VIDEO",
-            "lastSync": "2026-05-21T09:22:15"
-        }
-    ]
+  "Sensors": [
+    {
+      "Id": "S101",
+      "Zone": "ZONA_1",
+      "state": "offline",
+      "DataTypes": "TEMP,HUM,PM2,CO2,NOISE,UV,VIDEO",
+      "LastSync": "2026-05-27T11:27:36.3553965+00:00"
+    },
+    {
+      "Id": "S102",
+      "Zone": "ZONA_2",
+      "state": "offline",
+      "DataTypes": "TEMP,HUM,PM2,CO2,NOISE,UV,VIDEO",
+      "LastSync": "2026-05-21T09:22:15"
+    }
+  ]
 }

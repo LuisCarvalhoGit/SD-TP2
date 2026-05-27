@@ -9,12 +9,13 @@ services:
       dockerfile: Sensor/Dockerfile
     container_name: csharp-sensor
     env_file:
-      - .env.sensor.local
-    ports:
-      - "${PORT_SENSOR_UDP:-5002}:5002/udp"
+      - .env.distributed.sensor
     volumes:
-      - ./Frames:/app/Frames
+      - ./Sensor/Frames:/app/Frames
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true
+    restart: unless-stopped
     networks:
       - urban-sensor

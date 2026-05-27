@@ -9,9 +9,15 @@ services:
     ports:
       - "${PORT_RABBITMQ:-5672}:5672"
       - "${PORT_RABBITMQ_WEB:-15672}:15672"
-    environment:
-      - RABBITMQ_DEFAULT_USER=${RABBITMQ_USER:-guest}
-      - RABBITMQ_DEFAULT_PASS=${RABBITMQ_PASSWORD:-guest}
+    env_file:
+      - .env.distributed.gateway
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 15s
+    restart: unless-stopped
     networks:
       - urban-edge
     
@@ -21,17 +27,18 @@ services:
       dockerfile: PreProcessing/Dockerfile
     container_name: python-preprocess
     env_file:
-      - .env.gateway
+      - .env.distributed.gateway
     ports:
       - "${PORT_PYTHON_PRE:-50051}:50051"
     networks:
       - urban-edge
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; stub = grpc.aio.secure_channel('localhost:50051', grpc.ssl_channel_credentials()).insecure_channel(); print('health')"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 50051), 3); s.close()"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
       start_period: 10s
+    restart: unless-stopped
     
   csharp-gateway:
     build: 
@@ -39,14 +46,20 @@ services:
       dockerfile: Gateway/Dockerfile
     container_name: csharp-gateway
     env_file:
-      - .env.gateway.local
+      - .env.distributed.gateway
     volumes:
-      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway_config.json
-      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors_config.json
+      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway-config.json
+      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors-config.json
     ports:
-      - "${PORT_GATEWAY_UDP:-5002}:5002/udp"
+      - "${PORT_GATEWAY_UDP:-5004}:5004/udp"
+      - "${PORT_GATEWAY_WEB:-8080}:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on:
-      - rabbitmq
-      - python-preprocess
+      rabbitmq:
+        condition: service_healthy
+      python-preprocess:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - urban-edge

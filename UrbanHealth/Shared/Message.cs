@@ -117,35 +117,55 @@ namespace Shared {
 
         // Pack the message for UDP (Text Header + Binary Payload)
         public byte[] ToUdpBytes() {
+            if (BinaryData == null) return Encoding.UTF8.GetBytes(this.ToString());
+            return ToUdpBytes(BinaryData, 0, BinaryData.Length);
+        }
+
+        public byte[] ToUdpBytes(byte[] binaryData, int offset, int count) {
             string header = this.ToString(); // Already includes <EOF>
             byte[] headerBytes = Encoding.UTF8.GetBytes(header);
 
-            if (BinaryData == null) return headerBytes;
+            if (binaryData == null || count == 0) return headerBytes;
+            if (offset < 0 || count < 0 || offset + count > binaryData.Length) {
+                throw new ArgumentOutOfRangeException(nameof(count), "Invalid UDP payload slice.");
+            }
 
-            byte[] fullPacket = new byte[headerBytes.Length + BinaryData.Length];
+            byte[] fullPacket = new byte[headerBytes.Length + count];
             Buffer.BlockCopy(headerBytes, 0, fullPacket, 0, headerBytes.Length);
-            Buffer.BlockCopy(BinaryData, 0, fullPacket, headerBytes.Length, BinaryData.Length);
+            Buffer.BlockCopy(binaryData, offset, fullPacket, headerBytes.Length, count);
             return fullPacket;
         }
 
         // Unpack UDP bytes back into a Message object
         public static Message FromUdpBytes(byte[] packet) {
-            string fullData = Encoding.UTF8.GetString(packet);
-            int eofIndex = fullData.IndexOf("<EOF>");
-
+            int eofIndex = FindEofMarker(packet);
             if (eofIndex == -1) return null;
 
             // Extract header
-            string headerText = fullData.Substring(0, eofIndex + 5);
+            int headerLength = eofIndex + 5;
+            string headerText = Encoding.UTF8.GetString(packet, 0, headerLength);
             Message msg = Message.Parse(headerText);
 
             // Extract binary data if there's anything after <EOF>
-            int headerSize = Encoding.UTF8.GetByteCount(headerText);
-            if (packet.Length > headerSize) {
-                msg.BinaryData = new byte[packet.Length - headerSize];
-                Buffer.BlockCopy(packet, headerSize, msg.BinaryData, 0, msg.BinaryData.Length);
+            if (packet.Length > headerLength) {
+                msg.BinaryData = new byte[packet.Length - headerLength];
+                Buffer.BlockCopy(packet, headerLength, msg.BinaryData, 0, msg.BinaryData.Length);
             }
             return msg;
+        }
+
+        private static int FindEofMarker(byte[] packet) {
+            for (int i = 0; i <= packet.Length - 5; i++) {
+                if (packet[i] == '<' &&
+                    packet[i + 1] == 'E' &&
+                    packet[i + 2] == 'O' &&
+                    packet[i + 3] == 'F' &&
+                    packet[i + 4] == '>') {
+                    return i;
+                }
+            }
+
+            return -1;
         }
     }
 }

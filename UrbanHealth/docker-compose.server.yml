@@ -9,17 +9,18 @@ services:
       dockerfile: Analysis/Dockerfile
     container_name: python-analysis
     env_file:
-      - .env.server.local
+      - .env.distributed.server
     ports:
       - "${PORT_PYTHON_ANALY:-50052}:50052"
     networks:
       - urban-cloud
     healthcheck:
-      test: ["CMD", "python", "-c", "import grpc; stub = grpc.aio.secure_channel('localhost:50052', grpc.ssl_channel_credentials()).insecure_channel(); print('health')"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 50052), 3); s.close()"]
       interval: 10s
       timeout: 5s
-      retries: 3
+      retries: 12
       start_period: 10s
+    restart: unless-stopped
 
   csharp-server: 
     build: 
@@ -27,7 +28,7 @@ services:
       dockerfile: Server/Dockerfile
     container_name: csharp-server
     env_file:
-      - .env.server.local
+      - .env.distributed.server
     ports:
       - "${PORT_SERVER_TCP:-5001}:5001"
       - "${PORT_DASHBOARD:-8081}:8081"
@@ -35,6 +36,8 @@ services:
     volumes:
       - "./database_data:/app/data"
     depends_on:
-      - python-analysis
+      python-analysis:
+        condition: service_healthy
+    restart: unless-stopped
     networks:
       - urban-cloud

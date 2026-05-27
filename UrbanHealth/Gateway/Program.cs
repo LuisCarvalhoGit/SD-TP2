@@ -27,10 +27,10 @@ public class SensorPayload {
 class Program {
     private static string GID;
     private static readonly string RawServerIp = Environment.GetEnvironmentVariable("SERVER_IP") ?? "127.0.0.1";
-    private static readonly IPAddress ServerIp = ResolveAddress(RawServerIp);
-    private static readonly int ServerPort = int.Parse(Environment.GetEnvironmentVariable("SERVER_PORT") ?? "5001");
+    private static readonly int ServerPort = GetIntEnv("SERVER_PORT", 5001);
 
     private static IModel _rmqChannel;
+    private static IConnection _rmqConnection;
     private static TcpClient _serverClient;
     private static readonly SemaphoreSlim _serverTxLock = new SemaphoreSlim(1, 1);
     private static readonly Random _rnd = new Random();
@@ -38,11 +38,20 @@ class Program {
     // UDP Video Routing
     private static UdpClient _udpListener;
     private static UdpClient _serverUdpClient = new UdpClient();
-    private static readonly int UdpPort = int.Parse(Environment.GetEnvironmentVariable("GATEWAY_UDP_PORT") ?? "5002");
-    private static readonly int ServerUdpPort = int.Parse(Environment.GetEnvironmentVariable("SERVER_UDP_PORT") ?? "5003");
+    private static readonly int UdpPort = GetIntEnv("GATEWAY_UDP_PORT", 5004);
+    private static readonly int ServerUdpPort = GetIntEnv("SERVER_UDP_PORT", 5003);
+    private static readonly bool EnableLocalVideoPreview = GetBoolEnv("GATEWAY_ENABLE_LOCAL_VIDEO_PREVIEW", true);
+    private static readonly bool VideoDebugPackets = GetBoolEnv("VIDEO_DEBUG_PACKETS", false);
+    private static readonly VideoFrameAssembler _videoAssembler = new VideoFrameAssembler(
+        TimeSpan.FromMilliseconds(GetIntEnv("VIDEO_FRAME_TTL_MS", 750)),
+        GetIntEnv("VIDEO_MAX_PENDING_FRAMES_PER_SENSOR", 3),
+        GetIntEnv("VIDEO_MAX_FRAME_BYTES", 4 * 1024 * 1024),
+        GetIntEnv("VIDEO_MAX_PARTS_PER_FRAME", 512));
+    private static IPEndPoint? _serverUdpEndpoint;
+    private static DateTime _nextServerUdpResolveUtc = DateTime.MinValue;
+    private static long _forwardedVideoPackets = 0;
+    private static long _assembledPreviewFrames = 0;
 
-    private static ConcurrentDictionary<string, byte[][]> _videoBuffer = new();
-    private static ConcurrentDictionary<string, DateTime> _videoBufferTimestamps = new();
     private static ConcurrentDictionary<string, byte[]> _latestFrames = new();
     private static ConcurrentDictionary<string, bool> _activeStreams = new();
 
@@ -52,17 +61,19 @@ class Program {
     private static ConcurrentDictionary<(string, string), ConcurrentBag<(DateTime, double)>> _valuesToForward = new();
     private static PreProcessingService.PreProcessingServiceClient _rpcClient;
 
-    private static IPAddress ResolveAddress(string hostname) {
+    private static bool TryResolveAddress(string hostname, out IPAddress? address) {
+        address = null;
         try {
             var addresses = System.Net.Dns.GetHostAddresses(hostname);
             if (addresses.Length == 0) {
-                throw new InvalidOperationException($"No addresses resolved for hostname: {hostname}");
+                Console.WriteLine($"[DNS] No addresses resolved for hostname: {hostname}");
+                return false;
             }
-            Console.WriteLine($"[DNS] Resolved {hostname} to {addresses[0]}");
-            return addresses[0];
+            address = addresses[0];
+            return true;
         } catch (Exception ex) {
-            Console.WriteLine($"[ERROR] Failed to resolve SERVER_IP='{hostname}': {ex.Message}");
-            throw new InvalidOperationException($"Cannot resolve SERVER_IP: {hostname}", ex);
+            Console.WriteLine($"[DNS] Failed to resolve '{hostname}': {ex.Message}");
+            return false;
         }
     }
 
@@ -74,6 +85,7 @@ class Program {
         Console.WriteLine($"[DEBUG] Target Cloud TCP: {RawServerIp}:{ServerPort}");
         Console.WriteLine($"[DEBUG] Target Cloud UDP: {RawServerIp}:{ServerUdpPort}");
         Console.WriteLine($"[DEBUG] Listening UDP from Sensors on port: {UdpPort}");
+        Console.WriteLine($"[DEBUG] Local video preview: {(EnableLocalVideoPreview ? "enabled" : "disabled")}");
 
         string rpcUrl = Environment.GetEnvironmentVariable("PREPROCESS_RPC_URL") ?? "http://localhost:50051";
         var grpcChannel = GrpcChannel.ForAddress(rpcUrl);
@@ -111,13 +123,20 @@ class Program {
             HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
             UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
             Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
-            DispatchConsumersAsync = true 
+            AutomaticRecoveryEnabled = true,
+            TopologyRecoveryEnabled = true,
+            NetworkRecoveryInterval = TimeSpan.FromSeconds(5),
+            RequestedHeartbeat = TimeSpan.FromSeconds(15)
         };
 
-        for (int i = 1; i <= 20; i++) {
+        int attempt = 0;
+        int delayMs = 1000;
+
+        while (true) {
+            attempt++;
             try {
-                var connection = factory.CreateConnection();
-                _rmqChannel = connection.CreateModel();
+                _rmqConnection = factory.CreateConnection();
+                _rmqChannel = _rmqConnection.CreateModel();
                 string exchange = _config.GatewayInfo.Rabbitmq.Exchange ?? "urbanhealth_exchange";
                 _rmqChannel.ExchangeDeclare(exchange: exchange, type: ExchangeType.Topic);
                 
@@ -134,17 +153,27 @@ class Program {
                     } catch { Console.WriteLine("[DEBUG RMQ] Falha a desserializar mensagem."); }
                 };
                 _rmqChannel.BasicConsume(queue: queueName, autoAck: true, consumer: consumer);
+                Console.WriteLine("[RMQ] Gateway consumer connected and ready.");
                 return;
-            } catch { Thread.Sleep(3000); }
+            } catch (Exception ex) {
+                int sleepMs = delayMs + Random.Shared.Next(0, 750);
+                Console.WriteLine($"[RMQ] Attempt {attempt} failed: {ex.Message}. Retrying in {sleepMs}ms.");
+                Thread.Sleep(sleepMs);
+                delayMs = Math.Min(delayMs * 2, 30000);
+            }
         }
     }
 
     private static void SendCommandToSensor(string sid, string type, string value) {
-        if (_rmqChannel == null || _rmqChannel.IsClosed) return;
-        var payload = new { Type = type, Value = value };
-        var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
-        string exchange = _config.GatewayInfo.Rabbitmq.Exchange ?? "urbanhealth_exchange";
-        _rmqChannel.BasicPublish(exchange: exchange, routingKey: $"cmd.{sid}", basicProperties: null, body: body);
+        if (_rmqChannel == null || !_rmqChannel.IsOpen) return;
+        try {
+            var payload = new { Type = type, Value = value };
+            var body = Encoding.UTF8.GetBytes(JsonSerializer.Serialize(payload));
+            string exchange = _config.GatewayInfo.Rabbitmq.Exchange ?? "urbanhealth_exchange";
+            _rmqChannel.BasicPublish(exchange: exchange, routingKey: $"cmd.{sid}", basicProperties: null, body: body);
+        } catch (Exception ex) {
+            Console.WriteLine($"[RMQ] Failed to send command to {sid}: {ex.Message}");
+        }
     }
 
     private static void ProcessRabbitMQMessage(SensorPayload payload) {
@@ -179,7 +208,6 @@ class Program {
 
         if (payload.Type == "STRM" && payload.Action == "STOP") {
             _activeStreams.TryRemove(payload.SID, out _);
-            _videoBuffer.TryRemove(payload.SID, out _);
             Console.WriteLine($"[GATEWAY] Stream stopped for {payload.SID}");
             return;
         }
@@ -224,45 +252,36 @@ class Program {
         while (true) {
             try {
                 var result = await _udpListener.ReceiveAsync();
-                Console.WriteLine($"\n[DEBUG UDP] -> Recebi pacote UDP de {result.Buffer.Length} bytes!");
-
                 var msg = Message.FromUdpBytes(result.Buffer);
 
-                if (msg == null) {
-                    Console.WriteLine("[DEBUG UDP ERROR] Falha a traduzir bytes UDP em Shared.Message.");
+                if (msg == null || msg.CMD != "STRM") {
+                    if (VideoDebugPackets) Console.WriteLine("[UDP] Dropped invalid video packet.");
                     continue;
                 }
-
-                Console.WriteLine($"[DEBUG UDP] -> Mensagem convertida: SID={msg.SID}, PARTE={msg.Data["PART"]}/{msg.Data["TOTAL"]}");
 
                 if (!_activeStreams.ContainsKey(msg.SID)) {
-                    Console.WriteLine($"[DEBUG UDP DROP] Pacote bloqueado. O sensor {msg.SID} não tem stream autorizado.");
+                    if (VideoDebugPackets) Console.WriteLine($"[UDP] Dropped unauthorized stream packet from {msg.SID}.");
                     continue;
                 }
 
-                try {
-                    await _serverUdpClient.SendAsync(result.Buffer, result.Buffer.Length, ServerIp.ToString(), ServerUdpPort);
-                } catch { }
-
-                // 2. MONTAGEM LOCAL
-                int part = int.Parse(msg.Data["PART"]);
-                int total = int.Parse(msg.Data["TOTAL"]);
-
-                if (!_videoBuffer.TryGetValue(msg.SID, out var chunks) || chunks.Length != total) {
-                    chunks = new byte[total][];
-                    _videoBuffer[msg.SID] = chunks;
+                if (TryGetServerUdpEndpoint(out var serverEndpoint) && serverEndpoint != null) {
+                    await _serverUdpClient.SendAsync(result.Buffer, result.Buffer.Length, serverEndpoint);
+                    long forwarded = Interlocked.Increment(ref _forwardedVideoPackets);
+                    if (VideoDebugPackets && forwarded % 100 == 0) {
+                        Console.WriteLine($"[UDP RELAY] Forwarded {forwarded} video packets to {serverEndpoint}.");
+                    }
                 }
-                chunks[part - 1] = msg.BinaryData;
 
-                Console.WriteLine($"[DEBUG UDP] -> Guardei a parte {part} no buffer.");
-                
-                _videoBufferTimestamps[msg.SID] = DateTime.Now;
+                if (!EnableLocalVideoPreview) continue;
 
-                if (chunks.All(c => c != null)) {
-                    _latestFrames[msg.SID] = chunks.SelectMany(c => c).ToArray();
-                    _videoBuffer.TryRemove(msg.SID, out _);
-                    _videoBufferTimestamps.TryRemove(msg.SID, out _);
-                    Console.WriteLine($"[DEBUG UDP SUCCESS] Frame completa recebida e montada localmente para {msg.SID}.");
+                if (_videoAssembler.TryAddPacket(msg, out byte[]? fullImage, out string reason) && fullImage != null) {
+                    _latestFrames[msg.SID] = fullImage;
+                    long assembled = Interlocked.Increment(ref _assembledPreviewFrames);
+                    if (VideoDebugPackets || assembled % 30 == 0) {
+                        Console.WriteLine($"[UDP PREVIEW] Assembled {assembled} local frames. Latest sensor={msg.SID}.");
+                    }
+                } else if (VideoDebugPackets && reason != "pending" && reason != "duplicate-packet") {
+                    Console.WriteLine($"[UDP PREVIEW] Dropped packet for {msg.SID}: {reason}");
                 }
             } catch (Exception ex) { Console.WriteLine($"[DEBUG UDP LOOP ERRO] {ex.Message}"); }
         }
@@ -271,11 +290,9 @@ class Program {
     private static async Task VideoGarbageCollectorRoutineAsync() {
         while (true) {
             await Task.Delay(2000);
-            foreach (var frameTime in _videoBufferTimestamps) {
-                if ((DateTime.Now - frameTime.Value).TotalSeconds > 1.5) {
-                    _videoBuffer.TryRemove(frameTime.Key, out _);
-                    _videoBufferTimestamps.TryRemove(frameTime.Key, out _);
-                }
+            int removed = _videoAssembler.GarbageCollect();
+            if (VideoDebugPackets && removed > 0) {
+                Console.WriteLine($"[UDP PREVIEW] Garbage collector removed {removed} stale frames.");
             }
         }
     }
@@ -330,7 +347,7 @@ class Program {
         while (true) {
             try {
                 _serverClient = new TcpClient();
-                await _serverClient.ConnectAsync(ServerIp, ServerPort);
+                await _serverClient.ConnectAsync(RawServerIp, ServerPort);
                 Console.WriteLine("[DEBUG TCP] Conectado à Cloud Server com sucesso!");
                 currentDelayMs = baseDelayMs;
 
@@ -350,6 +367,24 @@ class Program {
             await Task.Delay(sleepTime);
             currentDelayMs = Math.Min(currentDelayMs * 2, maxDelayMs);
         }
+    }
+
+    private static bool TryGetServerUdpEndpoint(out IPEndPoint? endpoint) {
+        endpoint = _serverUdpEndpoint;
+        if (endpoint != null) return true;
+
+        DateTime now = DateTime.UtcNow;
+        if (now < _nextServerUdpResolveUtc) return false;
+
+        if (TryResolveAddress(RawServerIp, out IPAddress? address) && address != null) {
+            endpoint = new IPEndPoint(address, ServerUdpPort);
+            _serverUdpEndpoint = endpoint;
+            Console.WriteLine($"[DNS] Resolved Cloud UDP endpoint: {RawServerIp} -> {endpoint}");
+            return true;
+        }
+
+        _nextServerUdpResolveUtc = now.AddSeconds(5);
+        return false;
     }
 
     private static async Task GatewayHeartbeatRoutineAsync() {
@@ -440,5 +475,17 @@ class Program {
                 } finally { res.Close(); }
             }
         } catch { }
+    }
+
+    private static int GetIntEnv(string name, int defaultValue) {
+        return int.TryParse(Environment.GetEnvironmentVariable(name), out int value) ? value : defaultValue;
+    }
+
+    private static bool GetBoolEnv(string name, bool defaultValue) {
+        string raw = Environment.GetEnvironmentVariable(name);
+        if (string.IsNullOrWhiteSpace(raw)) return defaultValue;
+        return raw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
+               raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
     }
 }
