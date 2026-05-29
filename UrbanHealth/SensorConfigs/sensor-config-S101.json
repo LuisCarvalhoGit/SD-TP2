@@ -1,0 +1,7 @@
+{
+  "Description": "Sensor de Temperatura - Zona Norte",
+  "SupportedTypes": ["TEMP", "HUM", "VIDEO"],
+  "FrequencySeconds": 5,
+  "TargetGatewayUdpPort": 5004,
+  "StreamAutoStopEnabled": true
+}

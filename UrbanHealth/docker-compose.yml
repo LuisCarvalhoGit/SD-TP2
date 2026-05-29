@@ -111,6 +111,7 @@ services:
       - .env.local
     volumes:
       - ./Sensor/Frames:/app/Frames
+      - ./SensorConfigs:/app/configs
     stdin_open: true
     tty: true
     ports:

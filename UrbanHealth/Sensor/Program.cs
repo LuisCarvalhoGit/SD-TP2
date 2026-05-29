@@ -10,8 +10,19 @@ using System.Threading.Tasks;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 
+public class SensorConfiguration
+{
+    public string Description { get; set; } = "Default Sensor";
+    public string[] SupportedTypes { get; set; } = { "TEMP", "HUM", "PM2", "CO2", "NOISE", "UV", "VIDEO" };
+    public int FrequencySeconds { get; set; } = 7;
+    public int TargetGatewayUdpPort { get; set; } = 5004;
+    public bool StreamAutoStopEnabled { get; set; } = true;
+}
+
 class Program {
-    private static string SID = "S101";
+    private static string SID = Environment.GetEnvironmentVariable("SID") ?? "S_DEV";
+
+    private static SensorConfiguration _config = new SensorConfiguration();
 
     private static bool _isStreaming = false;
     private static DateTime _lastAlertTime = DateTime.MinValue;
@@ -20,6 +31,7 @@ class Program {
     private static IConnection _rmqConnection;
     private static IModel _channel;
     private const string ExchangeName = "urbanhealth_exchange";
+    private static readonly object _rmqLock = new object();
 
     private static string GatewayIp = Environment.GetEnvironmentVariable("GATEWAY_IP") ?? "127.0.0.1";
     private static int GatewayUdpPort = GetIntEnv("GATEWAY_UDP_PORT", 5004);
@@ -57,6 +69,39 @@ class Program {
         }
 
         InitRabbitMQ();
+
+        Console.WriteLine($"[SYSTEM] Starting Sensor {SID}...");
+
+        string configFilePath = $"/app/configs/sensor-config-{SID}.json";
+
+        if (!Environment.GetEnvironmentVariable("ENVIRONMENT")?.Equals("Production") ?? true)
+        {
+            configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"../../../SensorConfigs/sensor-config-{SID}.json");
+        }
+
+        if (File.Exists(configFilePath))
+        {
+            try
+            {
+                
+                string jsonString = File.ReadAllText(configFilePath);
+                _config = JsonSerializer.Deserialize<SensorConfiguration>(jsonString) ?? new SensorConfiguration();
+
+                Console.WriteLine($"[SYSTEM] Loaded config: {_config.Description}");
+
+                // AQUI ESCOLHER O QUE MIGRAR
+                GatewayUdpPort = _config.TargetGatewayUdpPort;
+                StreamAutoStopEnabled = _config.StreamAutoStopEnabled;
+
+            } catch (Exception ex)
+            {
+                Console.WriteLine($"[ERROR] Error parsing JSON: {ex.Message}. Using defaults.");
+            }
+
+        } else
+        {
+            Console.WriteLine($"[WARNING] File {configFilePath} not found. Using defaulr configuration.");
+        }
 
         Console.WriteLine("==================================================");
         Console.WriteLine(" Menu: DATA <TYPE> <VAL> | STRM START | STRM STOP | DISCONN");
@@ -180,8 +225,14 @@ class Program {
             };
             string json = JsonSerializer.Serialize(payload);
             var body = Encoding.UTF8.GetBytes(json);
-            _channel.BasicPublish(exchange: ExchangeName, routingKey: routingKey, basicProperties: null, body: body);
-            Console.WriteLine($"[DEBUG RMQ] Published -> Type:{type} Value:{value}");
+
+            lock (_rmqLock) {
+                _channel.BasicPublish(exchange: "urbanhealth_exchange",
+                                  routingKey: routingKey,
+                                  basicProperties: null,
+                                  body: body);
+            }
+            Console.WriteLine($"[DEBUG RMQ] Published -> Type: {type} Value: {value}");
         } catch (Exception ex) { 
             Console.WriteLine($"[DEBUG RMQ ERROR] Falha a publicar: {ex.Message}"); 
         }
@@ -197,8 +248,11 @@ class Program {
     private static async Task DataGenerationRoutineAsync() {
         Random rnd = new Random();
         while (true) {
-            await Task.Delay(7000);
-            string selectedType = _supportedTypes[rnd.Next(_supportedTypes.Length - 1)]; 
+            await Task.Delay(_config.FrequencySeconds * 1000);
+
+            if (_config.SupportedTypes == null || _config.SupportedTypes.Length == 0) continue;
+
+            string selectedType = _config.SupportedTypes[rnd.Next(_config.SupportedTypes.Length)];
             double value = selectedType switch {
                 "TEMP" => 15.0 + (rnd.NextDouble() * 20.0), "HUM" => 40.0 + (rnd.NextDouble() * 40.0),
                 "PM2" => 5.0 + (rnd.NextDouble() * 45.0), "CO2" => 400.0 + (rnd.NextDouble() * 600.0),

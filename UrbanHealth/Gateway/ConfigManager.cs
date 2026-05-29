@@ -53,8 +53,8 @@ namespace Gateway {
 
     public class ConfigManager {
 
-        private readonly string _gatewayConfigPath = "Configs/gateway-config.json";
-        private readonly string _sensorsConfigPath = "Configs/sensors-config.json";
+        private readonly string _gatewayConfigPath;
+        private readonly string _sensorsConfigPath;
 
         public GatewayConfig GatewayInfo { get; private set; }
         private ConcurrentDictionary<string, SensorConfig> _sensors;
@@ -65,6 +65,12 @@ namespace Gateway {
         };
 
         public ConfigManager() {
+
+            string gid = Environment.GetEnvironmentVariable("GID") ?? "G101";
+
+            _gatewayConfigPath = $"Configs/gateway-config-{gid}.json";
+            _sensorsConfigPath = $"Configs/sensors-config-{gid}.json";
+
             _sensors = new ConcurrentDictionary<string, SensorConfig>();
         }
         public void LoadConfig() {

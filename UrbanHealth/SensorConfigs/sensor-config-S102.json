@@ -1,0 +1,7 @@
+{
+  "Description": "Sensor de Temperatura - Zona Sul",
+  "SupportedTypes": ["TEMP", "HUM", "VIDEO"],
+  "FrequencySeconds": 10,
+  "TargetGatewayUdpPort": 5005,
+  "StreamAutoStopEnabled": true
+}

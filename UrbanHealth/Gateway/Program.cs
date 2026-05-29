@@ -58,7 +58,8 @@ class Program {
     private static ConfigManager _config = new ConfigManager();
     private static LocalCacheManager _cache = new LocalCacheManager();
     private static ConcurrentDictionary<string, DateTime> _activeSensors = new();
-    private static ConcurrentDictionary<(string, string), ConcurrentBag<(DateTime, double)>> _valuesToForward = new();
+    private static readonly object _bufferLock = new object();
+    private static Dictionary<(string, string), List<(DateTime, double)>> _valuesToForward = new();
     private static PreProcessingService.PreProcessingServiceClient _rpcClient;
 
     private static bool TryResolveAddress(string hostname, out IPAddress? address) {
@@ -178,6 +179,13 @@ class Program {
 
     private static void ProcessRabbitMQMessage(SensorPayload payload) {
         if (payload == null) return;
+
+        // O Gateway pergunta ao ConfigManager se este sensor pertence à sua zona
+        var (exists, _, _, supportedTypes, _) = _config.ValidateSensor(payload.SID);
+        
+        // Se o sensor não estiver no ficheiro JSON DESTE gateway, ignora a mensagem
+        if (!exists) return;
+
         _activeSensors[payload.SID] = DateTime.Now;
 
         if (payload.Type != "HB") {
@@ -185,7 +193,6 @@ class Program {
         }
 
         if (payload.Type == "STRM_REQ") {
-            var (exists, _, _, supportedTypes, _) = _config.ValidateSensor(payload.SID);
             if (exists && supportedTypes.Contains("VIDEO")) {
                 _activeStreams[payload.SID] = true;
                 Console.WriteLine($"[GATEWAY] Stream authorized for {payload.SID}");
@@ -194,9 +201,15 @@ class Program {
                 if (_serverClient != null && _serverClient.Connected) {
                     var fwdStrm = new Message { CMD = "FWD_STRM", SID = payload.SID, GID = GID };
                     fwdStrm.Data["ACTION"] = "START";
+                    
                     _ = Task.Run(async () => {
                         await _serverTxLock.WaitAsync();
-                        try { await Message.SendMessageAsync(_serverClient, fwdStrm); } finally { _serverTxLock.Release(); }
+                        try { 
+                            if (_serverClient != null && _serverClient.Connected) {
+                                await Message.SendMessageAsync(_serverClient, fwdStrm); 
+                            }
+                        } catch { } 
+                        finally { _serverTxLock.Release(); }
                     });
                 }
             } else {
@@ -239,8 +252,14 @@ class Program {
 
             if (addedToBuffer) {
                 var bufferKey = (payload.SID, payload.Type);
-                var readingsBag = _valuesToForward.GetOrAdd(bufferKey, _ => new ConcurrentBag<(DateTime, double)>());
-                readingsBag.Add((DateTime.Now, finalValue));
+                
+                // O lock bloqueia a thread durante microsegundos só para garantir a inserção segura
+                lock (_bufferLock) {
+                    if (!_valuesToForward.ContainsKey(bufferKey)) {
+                        _valuesToForward[bufferKey] = new List<(DateTime, double)>();
+                    }
+                    _valuesToForward[bufferKey].Add((DateTime.Now, finalValue));
+                }
                 Console.WriteLine($"[DEBUG MEMORY] Adicionado ao buffer para envio à Cloud.");
             }
 
@@ -302,38 +321,53 @@ class Program {
         while (true) {
             await Task.Delay(batchWindowMs);
 
-            // LOGICA VOLÁTIL NORMAL
-            foreach (var key in _valuesToForward.Keys) {
-                if (_valuesToForward.TryRemove(key, out var readingsBag)) {
-                    var snapshot = readingsBag.ToList();
-                    if (snapshot.Count == 0) continue;
+            Dictionary<(string, string), List<(DateTime, double)>> snapshot;
 
-                    string sensorId = key.Item1;
-                    string dataType = key.Item2;
-                    var (_, zone, _, _, _) = _config.ValidateSensor(sensorId);
+            // Fazemos o Swap em milissegundos. Quem está a receber do RMQ nunca fica bloqueado muito tempo.
+            lock (_bufferLock) {
+                if (_valuesToForward.Count == 0) continue;
+                snapshot = _valuesToForward;
+                // Reinicia o buffer original para estar pronto para novas leituras imediatamente
+                _valuesToForward = new Dictionary<(string, string), List<(DateTime, double)>>(); 
+            }
 
-                    var payloadList = snapshot.Select(item => new Dictionary<string, string> {
-                        { "Timestamp", item.Item1.ToUniversalTime().ToString("o") },
-                        { "Value", item.Item2.ToString(System.Globalization.CultureInfo.InvariantCulture) }
-                    }).ToList();
+            // Agora iteramos o snapshot com calma (sem medo de concorrência)
+            foreach (var kvp in snapshot) {
+                var key = kvp.Key;
+                var snapshotList = kvp.Value;
+                
+                if (snapshotList.Count == 0) continue;
 
-                    var batchMsg = new Message { CMD = "FWD", SID = sensorId, GID = GID };
-                    batchMsg.Data["TYPE"] = dataType;
-                    batchMsg.Data["ZONE"] = !string.IsNullOrWhiteSpace(zone) ? zone : "DESCONHECIDA";
-                    batchMsg.Data["BATCH_COUNT"] = snapshot.Count.ToString();
-                    batchMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
+                string sensorId = key.Item1;
+                string dataType = key.Item2;
+                var (_, zone, _, _, _) = _config.ValidateSensor(sensorId);
 
-                    Console.WriteLine($"[DEBUG TCP BATCH] Preparando para enviar {snapshot.Count} leituras de {sensorId}...");
+                var payloadList = snapshotList.Select(item => new Dictionary<string, string> {
+                    { "Timestamp", item.Item1.ToUniversalTime().ToString("o") },
+                    { "Value", item.Item2.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                }).ToList();
 
-                    try {
+                var batchMsg = new Message { CMD = "FWD", SID = sensorId, GID = GID };
+                batchMsg.Data["TYPE"] = dataType;
+                batchMsg.Data["ZONE"] = !string.IsNullOrWhiteSpace(zone) ? zone : "DESCONHECIDA";
+                batchMsg.Data["BATCH_COUNT"] = snapshotList.Count.ToString();
+                batchMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
+
+                Console.WriteLine($"[DEBUG TCP BATCH] Preparando para enviar {snapshotList.Count} leituras de {sensorId}...");
+
+                try {
+                    await _serverTxLock.WaitAsync();
+                    try { 
+                        // Verificamos e enviamos TUDO dentro da proteção
                         if (_serverClient == null || !_serverClient.Connected) throw new Exception("Cloud down");
-                        await _serverTxLock.WaitAsync();
-                        try { await Message.SendMessageAsync(_serverClient, batchMsg); } finally { _serverTxLock.Release(); }
-                        Console.WriteLine($"[DEBUG TCP BATCH] Enviado com sucesso para a Cloud!");
-                    } catch (Exception netEx) {
-                        Console.WriteLine($"[DEBUG TCP ERROR] Cloud inacessível ({netEx.Message}). Guardando na Base de Dados Edge (SQLite).");
-                        foreach (var reading in snapshot) _cache.SaveReading(sensorId, dataType, reading.Item2, reading.Item1);
+                        await Message.SendMessageAsync(_serverClient, batchMsg); 
+                    } finally { 
+                        _serverTxLock.Release(); 
                     }
+                    Console.WriteLine($"[DEBUG TCP BATCH] Enviado com sucesso para a Cloud!");
+                } catch (Exception netEx) {
+                    Console.WriteLine($"[DEBUG TCP ERROR] Cloud inacessível ({netEx.Message}). Guardando na Base de Dados Edge (SQLite).");
+                    foreach (var reading in snapshotList) _cache.SaveReading(sensorId, dataType, reading.Item2, reading.Item1);
                 }
             }
         }
@@ -346,22 +380,41 @@ class Program {
 
         while (true) {
             try {
-                _serverClient = new TcpClient();
-                await _serverClient.ConnectAsync(RawServerIp, ServerPort);
-                Console.WriteLine("[DEBUG TCP] Conectado à Cloud Server com sucesso!");
+                // Cria a ligação de forma isolada numa variável local
+                var newClient = new TcpClient();
+                await newClient.ConnectAsync(RawServerIp, ServerPort);
+                Console.WriteLine("[DEBUG TCP] Conectado ao Server com sucesso!");
                 currentDelayMs = baseDelayMs;
 
                 var statusMsg = new Message { CMD = "STS", GID = GID };
                 statusMsg.Data["STATUS"] = "ONLINE";
 
+                // Bloqueia as threads de envio APENAS para fazer a substituição segura
                 await _serverTxLock.WaitAsync();
-                try { await Message.SendMessageAsync(_serverClient, statusMsg); } finally { _serverTxLock.Release(); }
+                try {
+                    _serverClient = newClient;
+                    await Message.SendMessageAsync(_serverClient, statusMsg); 
+                } finally { 
+                    _serverTxLock.Release(); 
+                }
 
+                // Fica a escutar até a ligação cair
                 while (true) {
                     var msg = await Message.ReceiveMessageAsync(_serverClient);
                     if (msg == null) break;
                 }
             } catch { }
+
+            // Se chegou aqui, a ligação caiu. Limpeza isolada e segura.
+            await _serverTxLock.WaitAsync();
+            try {
+                if (_serverClient != null) {
+                    _serverClient.Close();
+                    _serverClient = null; // Coloca a null com segurança
+                }
+            } finally {
+                _serverTxLock.Release();
+            }
 
             int sleepTime = currentDelayMs + _rnd.Next(0, 1000);
             await Task.Delay(sleepTime);
@@ -390,12 +443,17 @@ class Program {
     private static async Task GatewayHeartbeatRoutineAsync() {
         while (true) {
             await Task.Delay(_config.GatewayInfo.Timings.HeartbeatIntervalMs);
-            if (_serverClient != null && _serverClient.Connected) {
-                try {
+            
+            await _serverTxLock.WaitAsync();
+            try {
+                // A verificação tem de estar sempre protegida
+                if (_serverClient != null && _serverClient.Connected) {
                     var hbMsg = new Message { CMD = "HB", GID = GID };
-                    await _serverTxLock.WaitAsync();
-                    try { await Message.SendMessageAsync(_serverClient, hbMsg); } finally { _serverTxLock.Release(); }
-                } catch { }
+                    await Message.SendMessageAsync(_serverClient, hbMsg); 
+                }
+            } catch { } 
+            finally { 
+                _serverTxLock.Release(); 
             }
         }
     }
@@ -417,14 +475,18 @@ class Program {
     }
 
     private static async Task PerformGracefulShutdownAsync() {
-        if (_serverClient != null && _serverClient.Connected) {
-            try {
+        await _serverTxLock.WaitAsync();
+        try {
+            if (_serverClient != null && _serverClient.Connected) {
                 var byeMsg = new Message { CMD = "DISCONN", GID = GID, SID = "GATEWAY" };
-                await _serverTxLock.WaitAsync();
-                try { await Message.SendMessageAsync(_serverClient, byeMsg); } finally { _serverTxLock.Release(); }
-                await Task.Delay(500);
+                await Message.SendMessageAsync(_serverClient, byeMsg);
+                await Task.Delay(500); // Dá tempo para o pacote físico sair pela placa de rede
                 _serverClient.Close();
-            } catch { }
+                _serverClient = null;
+            }
+        } catch { }
+        finally {
+            _serverTxLock.Release();
         }
         Environment.Exit(0);
     }

@@ -11,10 +11,17 @@ using Urbanhealth;
 using System.Text;
 using Microsoft.Data.Sqlite; 
 using System.Threading;
+using System.Threading.Channels;
 
 class Program {
     private static DataBaseManager _db = new DataBaseManager();
     private static AnalysisService.AnalysisServiceClient _rpcClient;
+
+    // O molde imutável (record) para transportar os dados até à base de dados
+    public record ReadingData(string SensorId, string GatewayId, string Zone, string DataType, double Value, DateTime Timestamp);
+    
+    // A fila de alta performance. Sendo "Unbounded", estica consoante a RAM, ideal para picos de tráfego.
+    private static readonly Channel<ReadingData> _dbQueue = Channel.CreateUnbounded<ReadingData>();
 
     private static UdpClient _udpListener;
     private static readonly int TcpPort = GetIntEnv("PORT_SERVER_TCP", 5001);
@@ -44,6 +51,7 @@ class Program {
         _ = Task.Run(StartGatewayTcpListenerAsync);
         _ = Task.Run(StartUdpListenerAsync);
         _ = Task.Run(MonitorGarbageCollectorAsync);
+        _ = Task.Run(DatabaseWorkerAsync);
 
         await StartWebDashboardApiAsync();
     }
@@ -54,6 +62,19 @@ class Program {
             int removed = _videoAssembler.GarbageCollect();
             if (VideoDebugPackets && removed > 0) {
                 Console.WriteLine($"[UDP] Garbage collector removed {removed} stale frames.");
+            }
+        }
+    }
+
+    private static async Task DatabaseWorkerAsync() {
+        Console.WriteLine("[SYSTEM] DB Worker iniciado. À espera de telemetria na fila...");
+        
+        // Fica eternamente e de forma assíncrona a ler da fila assim que entram dados
+        await foreach (var item in _dbQueue.Reader.ReadAllAsync()) {
+            try {
+                _db.SaveReading(item.SensorId, item.GatewayId, item.Zone, item.DataType, item.Value, item.Timestamp);
+            } catch (Exception ex) {
+                Console.WriteLine($"[DB FATAL] Erro ao gravar leitura do {item.SensorId}: {ex.Message}");
             }
         }
     }
@@ -112,7 +133,8 @@ class Program {
                                 if (DateTime.TryParse(item["Timestamp"], null, System.Globalization.DateTimeStyles.RoundtripKind, out DateTime ts) &&
                                     double.TryParse(item["Value"], System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double val)) {
                                     
-                                    _db.SaveReading(sensorId, gatewayId, zone, dataType, val, ts.ToUniversalTime());
+                                    var data = new ReadingData(sensorId, gatewayId, zone, dataType, val, ts.ToUniversalTime());
+                                    _dbQueue.Writer.TryWrite(data);
                                     successCount++;
                                 } else {
                                     Console.WriteLine($"[DEBUG DB ERROR] Falha ao fazer parsing de Timestamp ou Value. T:{item["Timestamp"]} V:{item["Value"]}");

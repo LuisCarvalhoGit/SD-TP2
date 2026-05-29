@@ -1,0 +1,17 @@
+{
+  "GatewayId": "G101",
+  "Rabbitmq": {
+    "Exchange": "urbanhealth_exchange",
+    "RoutingKeys": [
+      "sensor.#"
+    ],
+    "ConnectionRetries": 30,
+    "RetryDelayMs": 3000
+  },
+  "Timings": {
+    "BatchIntervalMs": 30000,
+    "HeartbeatIntervalMs": 10000,
+    "SensorTimeoutCheckMs": 5000,
+    "SensorTimeoutThresholdSecs": 30
+  }
+}

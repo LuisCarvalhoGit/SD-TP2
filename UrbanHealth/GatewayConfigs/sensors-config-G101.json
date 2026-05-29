@@ -1,0 +1,11 @@
+{
+  "Sensors": [
+    {
+      "Id": "S101",
+      "Zone": "Zona Norte",
+      "state": "offline",
+      "DataTypes": "TEMP, HUM",
+      "LastSync": "2026-05-29T18:49:48.6963211+00:00"
+    }
+  ]
+}

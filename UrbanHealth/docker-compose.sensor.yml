@@ -2,20 +2,34 @@ networks:
   urban-sensor:
     driver: bridge
 
+x-sensor-base: &sensor-base
+  build: 
+    context: .
+    dockerfile: Sensor/Dockerfile
+  env_file:
+    - .env.distributed.sensor
+  volumes:
+    - ./Sensor/Frames:/app/Frames
+    - ./SensorConfigs:/app/configs # Mount the folder with every config
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  stdin_open: true
+  tty: true
+  restart: unless-stopped
+  networks:
+    - urban-sensor
+
 services:
-  csharp-sensor:
-    build:
-      context: .
-      dockerfile: Sensor/Dockerfile
-    container_name: csharp-sensor
-    env_file:
-      - .env.distributed.sensor
-    volumes:
-      - ./Sensor/Frames:/app/Frames
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    stdin_open: true
-    tty: true
-    restart: unless-stopped
-    networks:
-      - urban-sensor
+  # S101 instance
+  sensor-s101:
+    <<: *sensor-base
+    container_name: sensor-s101
+    environment:
+      - SID=S101
+
+  # S102 instance
+  sensor-s102:
+    <<: *sensor-base
+    container_name: sensor-s102
+    environment:
+      - SID=S102

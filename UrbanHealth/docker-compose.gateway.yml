@@ -2,6 +2,27 @@ networks:
   urban-edge:
     driver: bridge
 
+
+x-gateway-base: &gateway-base
+  build: 
+    context: .
+    dockerfile: Gateway/Dockerfile
+  env_file:
+    - .env.distributed.gateway
+  volumes:
+    # Montamos a pasta INTEIRA onde estão as configs de todos os Gateways
+    - ./GatewayConfigs:/app/Configs  
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
+  depends_on:
+    rabbitmq:
+      condition: service_healthy
+    python-preprocess:
+      condition: service_healthy
+  restart: unless-stopped
+  networks:
+    - urban-edge
+
 services:
   rabbitmq:
     image: rabbitmq:3-management
@@ -12,11 +33,11 @@ services:
     env_file:
       - .env.distributed.gateway
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 12
-      start_period: 15s
+      start_period: 45s
     restart: unless-stopped
     networks:
       - urban-edge
@@ -39,27 +60,21 @@ services:
       retries: 12
       start_period: 10s
     restart: unless-stopped
-    
-  csharp-gateway:
-    build: 
-      context: .
-      dockerfile: Gateway/Dockerfile
-    container_name: csharp-gateway
-    env_file:
-      - .env.distributed.gateway
-    volumes:
-      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway-config.json
-      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors-config.json
+
+  gateway-g101:
+    <<: *gateway-base
+    container_name: gateway-g101
+    environment:
+      - GID=G101
     ports:
-      - "${PORT_GATEWAY_UDP:-5004}:5004/udp"
-      - "${PORT_GATEWAY_WEB:-8080}:8080"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-    depends_on:
-      rabbitmq:
-        condition: service_healthy
-      python-preprocess:
-        condition: service_healthy
-    restart: unless-stopped
-    networks:
-      - urban-edge
+      - "5004:5004/udp"
+      - "8080:8080"
+
+  gateway-g102:
+    <<: *gateway-base
+    container_name: gateway-g102
+    environment:
+      - GID=G102
+    ports:
+      - "5005:5004/udp"  # Os sensores desta zona enviam para a porta física 5005
+      - "8082:8080"      # Painel web acedido via localhost:8082
