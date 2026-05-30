@@ -12,11 +12,11 @@ services:
     env_file:
       - .env.local
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
-      timeout: 5s
+      timeout: 10s
       retries: 12
-      start_period: 30s
+      start_period: 200s
     restart: unless-stopped
     networks:
       - urban-net
@@ -86,6 +86,8 @@ services:
     container_name: csharp-gateway
     env_file: 
       - .env.local
+    environment:
+      - GID=G101
     volumes:
       - ./GatewayConfigs/gateway-config-G101.json:/app/Configs/gateway-config.json
       - ./GatewayConfigs/sensors-config-G101.json:/app/Configs/sensors-config.json
@@ -109,6 +111,8 @@ services:
     container_name: csharp-sensor
     env_file: 
       - .env.local
+    environment:
+      - SID=S101
     volumes:
       - ./Sensor/Frames:/app/Frames
       - ./SensorConfigs:/app/configs

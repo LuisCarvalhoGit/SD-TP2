@@ -5,14 +5,15 @@ using Microsoft.Data.Sqlite;
 public class DataBaseManager {
     private readonly string _connectionString;
 
-    public DataBaseManager() {
+    public DataBaseManager(string? connectionString = null) {
         // Guarda a DB na pasta raiz do projeto (ou no volume Docker)
         string dbPath = Environment.GetEnvironmentVariable("DB_PATH") ?? "urbanhealth_central.db";
-        _connectionString = $"Data Source={dbPath}";
+
+        _connectionString = connectionString ?? $"Data Source={dbPath}";
         InitializeDatabase();
     }
 
-    private void InitializeDatabase() {
+    public void InitializeDatabase() {
         using (var connection = new SqliteConnection(_connectionString)) {
             connection.Open();
 
