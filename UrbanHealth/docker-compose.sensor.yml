@@ -6,8 +6,6 @@ x-sensor-base: &sensor-base
   build: 
     context: .
     dockerfile: Sensor/Dockerfile
-  env_file:
-    - .env.distributed.sensor
   volumes:
     - ./Sensor/Frames:/app/Frames
     - ./SensorConfigs:/app/configs # Mount the folder with every config

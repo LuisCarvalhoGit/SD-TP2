@@ -138,11 +138,28 @@ class Program {
             try {
                 _rmqConnection = factory.CreateConnection();
                 _rmqChannel = _rmqConnection.CreateModel();
+                
                 string exchange = _config.GatewayInfo.Rabbitmq.Exchange ?? "urbanhealth_exchange";
+                List<string> routingKeys = _config.GatewayInfo.Rabbitmq.RoutingKeys;
+
+                // Salvaguarda caso a lista não exista no JSON ou esteja vazia
+                if (routingKeys == null || routingKeys.Count <= 0)
+                {
+                    routingKeys = new List<string> { "sensor.#" };
+                }
+
                 _rmqChannel.ExchangeDeclare(exchange: exchange, type: ExchangeType.Topic);
                 
                 var queueName = _rmqChannel.QueueDeclare().QueueName;
-                _rmqChannel.QueueBind(queue: queueName, exchange: exchange, routingKey: "sensor.#");
+
+                // Iterar sobre a lista e ligar a mesma Queue a cada uma das Routing Keys
+                foreach (var routingKey in routingKeys)
+                {
+                    _rmqChannel.QueueBind(queue: queueName, exchange: exchange, routingKey: routingKey);
+                }
+
+                // Garante que o Gateway processa no máximo 200 mensagens em simultâneo
+                _rmqChannel.BasicQos(prefetchSize: 0, prefetchCount: 200, global: false);
 
                 var consumer = new EventingBasicConsumer(_rmqChannel);
                 consumer.Received += (model, ea) => {
@@ -226,6 +243,17 @@ class Program {
         }
 
         if (payload.Type == "STS" || payload.Type == "HB" || payload.Type == "STRM") return;
+
+        if (!supportedTypes.Contains(payload.Type)) {
+            var newTypesList = supportedTypes.ToList();
+            newTypesList.Add(payload.Type);
+            
+            // Reconstrói a string separada por vírgulas para gravar no JSON
+            string newTypesString = string.Join(", ", newTypesList);
+            
+            _config.UpdateSensorDataTypes(payload.SID, newTypesString);
+            Console.WriteLine($"[CONFIG] O sensor {payload.SID} começou a transmitir {payload.Type}. Configuração atualizada!");
+        }
 
         try {
             if (!double.TryParse(payload.Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out double numericValue)) return;
@@ -394,6 +422,59 @@ class Program {
                 try {
                     _serverClient = newClient;
                     await Message.SendMessageAsync(_serverClient, statusMsg); 
+
+                    // Dispara a recuperação de dados offline em background
+                    _ = Task.Run(async () => {
+                        var pendentes = _cache.GetPendingReadings();
+                        if (pendentes.Count > 0) {
+                            Console.WriteLine($"[EDGE CACHE] O Server voltou! A recuperar {pendentes.Count} leituras offline...");
+                            
+                            // Agrupar as leituras por Sensor e Tipo de Dados (ex: todas as TEMP do S101 juntas)
+                            var agrupados = pendentes.GroupBy(p => new { p.Sid, p.Type });
+
+                            bool erroNoEnvio = false;
+
+                            foreach (var grupo in agrupados) {
+                                string sensorId = grupo.Key.Sid;
+                                string dataType = grupo.Key.Type;
+                                var (_, zone, _, _, _) = _config.ValidateSensor(sensorId);
+
+                                // Formatar tal como no BatchDataRoutineAsync
+                                var payloadList = grupo.Select(item => new Dictionary<string, string> {
+                                    { "Timestamp", item.Ts.ToUniversalTime().ToString("o") },
+                                    { "Value", item.Value.ToString(System.Globalization.CultureInfo.InvariantCulture) }
+                                }).ToList();
+
+                                var batchMsg = new Message { CMD = "FWD", SID = sensorId, GID = GID };
+                                batchMsg.Data["TYPE"] = dataType;
+                                batchMsg.Data["ZONE"] = !string.IsNullOrWhiteSpace(zone) ? zone : "DESCONHECIDA";
+                                batchMsg.Data["BATCH_COUNT"] = grupo.Count().ToString();
+                                batchMsg.Data["RAW_PAYLOAD"] = JsonSerializer.Serialize(payloadList);
+
+                                try {
+                                    await _serverTxLock.WaitAsync();
+                                    try { 
+                                        if (_serverClient != null && _serverClient.Connected) {
+                                            await Message.SendMessageAsync(_serverClient, batchMsg); 
+                                        } else {
+                                            erroNoEnvio = true;
+                                        }
+                                    } finally { _serverTxLock.Release(); }
+                                } catch (Exception ex) {
+                                    Console.WriteLine($"[EDGE CACHE ERROR] Falha ao reenviar: {ex.Message}");
+                                    erroNoEnvio = true;
+                                }
+                                
+                                if (erroNoEnvio) break; // Se falhou a meio, para e tenta na próxima reconexão
+                            }
+
+                            if (!erroNoEnvio) {
+                                // Se tudo foi enviado com sucesso, apagamos da base de dados local SQLite
+                                _cache.DeleteReadings(pendentes.Select(p => p.Id));
+                                Console.WriteLine("[EDGE CACHE] Dados offline recuperados e sincronizados com o Server!");
+                            }
+                        }
+                    });
                 } finally { 
                     _serverTxLock.Release(); 
                 }

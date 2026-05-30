@@ -87,10 +87,7 @@
         .cam-header { background: rgba(0,0,0,0.8); padding: 10px 15px; display: flex; justify-content: space-between; align-items: center; }
         .cam-feed { width: 100%; aspect-ratio: 16/9; background: #000; object-fit: cover; }
 
-        /* NOVO DESIGN DA ABA ANALYTICS */
-        /* ==========================================
-           MINIMALIST ML ANALYTICS
-           ========================================== */
+        /* ANALYTICS */
         .ml-filters { display: flex; gap: 20px; align-items: flex-end; background: var(--bg-panel); padding: 20px 25px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.03); }
         .ml-filter-group { display: flex; flex-direction: column; gap: 8px; flex: 1; max-width: 250px; }
         .ml-filter-group label { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 1px; font-weight: 600; }
@@ -115,7 +112,6 @@
         
         .log-terminal { background: #090a0f; font-family: 'Courier New', monospace; color: #69f0ae; font-size: 13px; line-height: 1.6; border: 1px solid rgba(255,255,255,0.02); height: 180px; overflow-y: auto; }
         
-        /* Forçar o fundo escuro nas opções do dropdown */
         .ml-filter-group select option {
             background-color: var(--bg-panel);
             color: var(--text-main);
@@ -146,7 +142,7 @@
             <li class="nav-item active" onclick="switchTab('overview',this)">Monitoring</li>
             <li class="nav-item" onclick="switchTab('topology',this)">Topology</li>
             <li class="nav-item" onclick="switchTab('cameras',this)">Sensors Streaming</li>
-            <li class="nav-item" onclick="switchTab('analytics',this)">ML Analytics</li>
+            <li class="nav-item" onclick="switchTab('analytics',this)">Analytics</li>
         </ul>
     </nav>
 
@@ -205,7 +201,7 @@
 
         <section id="analytics" class="tab-pane">
             <div class="analytics-header" style="margin-bottom: 25px;">
-                <h2 style="margin:0;color:var(--text-main);font-size:24px;font-weight:600;">ML Analytics Engine</h2>
+                <h2 style="margin:0;color:var(--text-main);font-size:24px;font-weight:600;">Analytics Engine</h2>
                 <p style="color:var(--text-muted);margin:5px 0 0;font-size:14px;">Advanced data analysis and anomaly detection.</p>
             </div>
 
@@ -405,7 +401,6 @@
         }
         function closeModal() { document.getElementById('sensor-modal').style.display = 'none'; }
 
-        // VIDEO WALL
         var cameraIntervals = {};
         function addCamera() {
             var sid = document.getElementById('cam-sid').value.trim().toUpperCase();
@@ -426,7 +421,6 @@
             const type = document.getElementById('ml-type').value;
             const logBox = document.getElementById('ml-log');
             
-            // Ativa o layout Flexbox
             document.getElementById('analytics-results').style.display = 'flex';
             logBox.innerHTML += `<br>> <strong>[${new Date().toLocaleTimeString()}]</strong> Dispatching gRPC request for ${type} analysis on ${sensor}...`;
             logBox.scrollTop = logBox.scrollHeight;
@@ -446,7 +440,7 @@
 
                 const badge = document.getElementById('ml-evaluation');
                 badge.innerText = data.Evaluation;
-                badge.className = 'ml-risk-badge'; // Reset classes
+                badge.className = 'ml-risk-badge'; 
                 
                 const evalLower = data.Evaluation.toLowerCase();
                 if (evalLower.includes('normal') || evalLower.includes('seguro') || evalLower.includes('safe')) {
@@ -476,59 +470,196 @@
             logBox.scrollTop = logBox.scrollHeight;
         }
 
-        // TOPOLOGY LOGIC MANTIDA E MINIFICADA POR ORGANIZAÇÃO
+        // ==========================================
+        // TOPOLOGY LOGIC - CORRIGIDO PARA MÚLTIPLOS NÓS
+        // ==========================================
         (function () {
-            var COL={server:'#00acc1',gateway:'#8a91b8',sensorOk:'#69f0ae',sensorAlert:'#ff5252',edgeSrv:'rgba(0,172,193,0.40)',edgeGw:'rgba(138,145,184,0.35)'},
-            _nodes={},_edges={},_canvas=null,_ctx=null,_W=0,_H=0,_pan={x:0,y:0},_zoom=1,_panDrag=null,_raf=null,_tick=0;
-            function mkNode(id,t,l){return{id:id,type:t,label:l,x:0,y:0,tx:0,ty:0,alert:false};}
-            window.topoSyncGraph=function(){
-                var gws=globalData.gatewaysOnline||[],sensors=globalData.activeSensors||[],reads=globalData.readings||[],alertSet={};
-                reads.forEach(function(r){var v=parseFloat(r.Value);if((r.Type==='TEMP'&&v>33)||(r.Type==='HUM'&&v>78)||(r.Type==='CO2'&&v>995)||(r.Type==='NOISE'&&v>88)||(r.Type==='PM2'&&v>48)||(r.Type==='UV'&&v>9))alertSet[r.Sensor]=true;});
-                if(!_nodes['SERVER'])_nodes['SERVER']=mkNode('SERVER','SERVER','Server');
-                var liveGw={};gws.forEach(function(gw){liveGw[gw]=true;if(!_nodes[gw])_nodes[gw]=mkNode(gw,'GATEWAY',gw);var eid='e_'+gw+'_SRV';if(!_edges[eid])_edges[eid]={id:eid,from:gw,to:'SERVER',type:'SG'};});
-                var liveSn={};sensors.forEach(function(s){liveSn[s.Sensor]=true;if(!_nodes[s.Sensor])_nodes[s.Sensor]=mkNode(s.Sensor,'SENSOR',s.Sensor);_nodes[s.Sensor].alert=!!alertSet[s.Sensor];var eid='e_'+s.Sensor+'_'+s.Gateway;if(!_edges[eid]){Object.keys(_edges).forEach(function(k){if((_edges[k].from===s.Sensor)&&k!==eid)delete _edges[k];});if(_nodes[s.Gateway])_edges[eid]={id:eid,from:s.Sensor,to:s.Gateway,type:'GS'};}});
-                Object.keys(_nodes).forEach(function(id){var n=_nodes[id];if((n.type==='GATEWAY'&&!liveGw[id])||(n.type==='SENSOR'&&!liveSn[id])){delete _nodes[id];Object.keys(_edges).forEach(function(eid){if(_edges[eid].from===id||_edges[eid].to===id)delete _edges[eid];});}});
-                var srv=_nodes['SERVER'];if(srv){srv.tx=0;srv.ty=-180;}var gwNodes=Object.values(_nodes).filter(function(n){return n.type==='GATEWAY';}),snNodes=Object.values(_nodes).filter(function(n){return n.type==='SENSOR';}),currentX=0;
-                gwNodes.forEach(function(gw){var gwSensors=snNodes.filter(function(s){return !!_edges['e_'+s.id+'_'+gw.id];}),branchWidth=Math.max(120,gwSensors.length*90),startX=currentX;gwSensors.forEach(function(s,i){s.tx=startX+(branchWidth/gwSensors.length)*(i+0.5);s.ty=160;});gw.tx=startX+branchWidth/2;gw.ty=0;currentX+=branchWidth+100;});
-                var shiftX=-(currentX>0?currentX-100:0)/2;gwNodes.forEach(function(gw){gw.tx+=shiftX;});snNodes.forEach(function(s){s.tx+=shiftX;});
-                if(!_raf)_loop();
-            };
-            function _loop(){
-                Object.values(_nodes).forEach(function(n){n.x+=(n.tx-n.x)*0.1;n.y+=(n.ty-n.y)*0.1;});
-                if(!_canvas)return;_ctx.clearRect(0,0,_W,_H);_ctx.fillStyle='rgba(255,255,255,0.04)';
-                var gs=50*_zoom,ox=(_W/2+_pan.x)%gs,oy=(_H/2+_pan.y)%gs,cx=_W/2+_pan.x,cy=_H/2+_pan.y;
-                for(var gx=ox;gx<_W;gx+=gs)for(var gy=oy;gy<_H;gy+=gs){_ctx.beginPath();_ctx.arc(gx,gy,1,0,Math.PI*2);_ctx.fill();}
-                Object.values(_edges).forEach(function(e){var a=_nodes[e.from],b=_nodes[e.to];if(!a||!b)return;var ax=cx+a.x*_zoom,ay=cy+a.y*_zoom,bx=cx+b.x*_zoom,by=cy+b.y*_zoom,col=e.type==='SG'?COL.edgeSrv:COL.edgeGw;
-                    var grad=_ctx.createLinearGradient(ax,ay,bx,by);grad.addColorStop(0,col.replace('0.40','0.7').replace('0.35','0.7'));grad.addColorStop(1,col.replace('0.40','0.1').replace('0.35','0.1'));
-                    _ctx.save();_ctx.strokeStyle=grad;_ctx.lineWidth=1.5;_ctx.setLineDash([6,5]);_ctx.beginPath();_ctx.moveTo(ax,ay);_ctx.lineTo(bx,by);_ctx.stroke();_ctx.setLineDash([]);
-                    var ang=Math.atan2(by-ay,bx-ax);_ctx.fillStyle=col.replace('0.40','0.75').replace('0.35','0.7');_ctx.beginPath();_ctx.moveTo(bx-9*Math.cos(ang),by-9*Math.sin(ang));_ctx.lineTo(bx-9*Math.cos(ang-0.5),by-9*Math.sin(ang-0.5));_ctx.lineTo(bx-9*Math.cos(ang+0.5),by-9*Math.sin(ang+0.5));_ctx.closePath();_ctx.fill();_ctx.restore();
-                });
-                Object.values(_nodes).forEach(function(n){
-                    var sx=cx+n.x*_zoom,sy=cy+n.y*_zoom,r=(n.type==='SERVER'?22:n.type==='GATEWAY'?17:14)*_zoom,col=n.type==='SERVER'?COL.server:(n.type==='GATEWAY'?COL.gateway:(n.alert?COL.sensorAlert:COL.sensorOk));
-                    _ctx.save();
-                    if(n.type==='SERVER'){
-                        var g=_ctx.createRadialGradient(sx,sy,0,sx,sy,r*2.2);g.addColorStop(0,'rgba(0,172,193,0.16)');g.addColorStop(1,'transparent');
-                        _ctx.fillStyle=g;_ctx.beginPath();_ctx.arc(sx,sy,r*2.2,0,Math.PI*2);_ctx.fill();
-                        _ctx.fillStyle='#101424';_ctx.strokeStyle=col;_ctx.lineWidth=2.5;_ctx.beginPath();_ctx.roundRect(sx-r*0.75,sy-r,r*1.5,r*2,4);_ctx.fill();_ctx.stroke();
-                    }else if(n.type==='GATEWAY'){
-                        _ctx.fillStyle='#101424';_ctx.strokeStyle=col;_ctx.lineWidth=2;_ctx.beginPath();_ctx.roundRect(sx-r*1.2,sy-r*0.6,r*2.4,r*1.2,4);_ctx.fill();_ctx.stroke();
-                    }else{
-                        if(n.alert){_ctx.strokeStyle='rgba(255,82,82,'+(0.45+0.45*Math.sin(_tick*0.09))+')';_ctx.lineWidth=2;_ctx.beginPath();for(var i=0;i<6;i++){var a=i*Math.PI/3-Math.PI/6;_ctx.lineTo(sx+(r+8)*Math.cos(a),sy+(r+8)*Math.sin(a));}_ctx.closePath();_ctx.stroke();}
-                        _ctx.fillStyle='#101424';_ctx.strokeStyle=col;_ctx.lineWidth=2.5;_ctx.beginPath();for(var i=0;i<6;i++){var a=i*Math.PI/3-Math.PI/6;_ctx.lineTo(sx+r*Math.cos(a),sy+r*Math.sin(a));}_ctx.closePath();_ctx.fill();_ctx.stroke();
-                        _ctx.fillStyle=col;_ctx.beginPath();_ctx.arc(sx,sy,4,0,Math.PI*2);_ctx.fill();
+            var COL = { server: '#00acc1', gateway: '#8a91b8', sensorOk: '#69f0ae', sensorAlert: '#ff5252', edgeSrv: 'rgba(0,172,193,0.40)', edgeGw: 'rgba(138,145,184,0.35)' };
+            var _nodes = {}, _edges = {}, _canvas = null, _ctx = null, _W = 0, _H = 0, _pan = { x: 0, y: 0 }, _zoom = 1, _panDrag = null, _raf = null, _tick = 0;
+            
+            function mkNode(id, t, l) { return { id: id, type: t, label: l, x: 0, y: 0, tx: 0, ty: 0, alert: false }; }
+            
+            window.topoSyncGraph = function() {
+                var gws = globalData.gatewaysOnline || [];
+                var sensors = globalData.activeSensors || [];
+                var reads = globalData.readings || [];
+                var alertSet = {};
+                var sensorGwMap = {}; // Mapa para associar corretamente os sensores aos gateways
+
+                // Processar dados recentes para alertas e mapeamento dinâmico
+                reads.forEach(function(r) {
+                    var v = parseFloat(r.Value);
+                    if ((r.Type==='TEMP'&&v>33)||(r.Type==='HUM'&&v>78)||(r.Type==='CO2'&&v>995)||(r.Type==='NOISE'&&v>88)||(r.Type==='PM2'&&v>48)||(r.Type==='UV'&&v>9)) {
+                        alertSet[r.Sensor] = true;
                     }
-                    _ctx.fillStyle='#fff';_ctx.font='bold '+Math.max(9,Math.round(10*_zoom))+'px "Segoe UI",sans-serif';_ctx.textAlign='center';_ctx.textBaseline='top';_ctx.fillText(n.label,sx,sy+(n.type==='SERVER'?r:r)+5);_ctx.restore();
+                    if (r.Sensor && r.Gateway) {
+                        sensorGwMap[r.Sensor] = r.Gateway;
+                    }
                 });
-                _tick++;_raf=requestAnimationFrame(_loop);
+
+                if (!_nodes['SERVER']) _nodes['SERVER'] = mkNode('SERVER', 'SERVER', 'Server');
+                
+                // Processar Gateways
+                var liveGw = {};
+                gws.forEach(function(gw) {
+                    var gwId = typeof gw === 'string' ? gw : gw.Id; 
+                    if (!gwId) return;
+                    liveGw[gwId] = true;
+                    
+                    if (!_nodes[gwId]) _nodes[gwId] = mkNode(gwId, 'GATEWAY', gwId);
+                    
+                    var eid = 'e_' + gwId + '_SRV';
+                    if (!_edges[eid]) _edges[eid] = { id: eid, from: gwId, to: 'SERVER', type: 'SG' };
+                });
+
+                // Processar Sensores
+                var liveSn = {};
+                sensors.forEach(function(s) {
+                    var sId = typeof s === 'string' ? s : s.Sensor;
+                    if (!sId) return;
+                    
+                    // Descobrir o gateway dono deste sensor
+                    var gwId = sensorGwMap[sId] || (typeof s !== 'string' ? s.Gateway : null) || (gws.length > 0 ? (typeof gws[0] === 'string' ? gws[0] : gws[0].Id) : null);
+                    
+                    // Se o Gateway dono deste sensor está offline (não está na liveGw), 
+                    // forçamos o sensor a ficar offline também
+                    // ==========================================
+                    if (!gwId || !liveGw[gwId]) {
+                        liveSn[sId] = false;
+                        return; // Aborta a criação deste sensor no ecrã
+                    }
+
+                    liveSn[sId] = true; // O Gateway está online, logo o sensor também está
+                    
+                    if (!_nodes[sId]) _nodes[sId] = mkNode(sId, 'SENSOR', sId);
+                    _nodes[sId].alert = !!alertSet[sId];
+                    
+                    var eid = 'e_' + sId + '_' + gwId;
+                    // Apagar arestas antigas deste sensor se ele mudou de gateway
+                    Object.keys(_edges).forEach(function(k) {
+                        if (_edges[k].from === sId && k !== eid) delete _edges[k];
+                    });
+                    if (_nodes[gwId]) {
+                        _edges[eid] = { id: eid, from: sId, to: gwId, type: 'GS' };
+                    }
+                });
+
+                // Limpar nós mortos (Desconectados)
+                Object.keys(_nodes).forEach(function(id) {
+                    var n = _nodes[id];
+                    // Se o nó já não está "vivo", apaga-o da memória visual
+                    if ((n.type === 'GATEWAY' && !liveGw[id]) || (n.type === 'SENSOR' && !liveSn[id])) {
+                        delete _nodes[id];
+                        
+                        // Apagar todas as linhas (arestas) ligadas a este nó fantasma
+                        Object.keys(_edges).forEach(function(eid) {
+                            if (_edges[eid].from === id || _edges[eid].to === id) delete _edges[eid];
+                        });
+                    }
+                });
+
+                // Motor de Física / Layout Automático da Árvore
+                var srv = _nodes['SERVER'];
+                if (srv) { srv.tx = 0; srv.ty = -180; }
+                
+                var gwNodes = Object.values(_nodes).filter(function(n) { return n.type === 'GATEWAY'; });
+                var snNodes = Object.values(_nodes).filter(function(n) { return n.type === 'SENSOR'; });
+                
+                var currentX = 0;
+                gwNodes.forEach(function(gw) {
+                    var gwSensors = snNodes.filter(function(s) { return !!_edges['e_' + s.id + '_' + gw.id]; });
+                    var branchWidth = Math.max(120, gwSensors.length * 100); 
+                    var startX = currentX;
+                    
+                    gwSensors.forEach(function(s, i) {
+                        s.tx = startX + (branchWidth / gwSensors.length) * (i + 0.5);
+                        s.ty = 160;
+                    });
+                    
+                    gw.tx = startX + branchWidth / 2;
+                    gw.ty = 0;
+                    currentX += branchWidth + 80;
+                });
+
+                // Centralizar a árvore inteira no meio do Canvas
+                var shiftX = -(currentX > 0 ? currentX - 80 : 0) / 2;
+                gwNodes.forEach(function(gw) { gw.tx += shiftX; });
+                snNodes.forEach(function(s) { s.tx += shiftX; });
+
+                if (!_raf) _loop();
+            };
+
+            // Desenhar os Gráficos no Canvas (Renderizador Mantido Intacto)
+            function _loop() {
+                Object.values(_nodes).forEach(function(n) { n.x += (n.tx - n.x) * 0.1; n.y += (n.ty - n.y) * 0.1; });
+                
+                if (!_canvas) return;
+                _ctx.clearRect(0, 0, _W, _H);
+                _ctx.fillStyle = 'rgba(255,255,255,0.04)';
+                
+                var gs = 50 * _zoom, ox = (_W / 2 + _pan.x) % gs, oy = (_H / 2 + _pan.y) % gs, cx = _W / 2 + _pan.x, cy = _H / 2 + _pan.y;
+                for (var gx = ox; gx < _W; gx += gs) for (var gy = oy; gy < _H; gy += gs) { _ctx.beginPath(); _ctx.arc(gx, gy, 1, 0, Math.PI * 2); _ctx.fill(); }
+                
+                Object.values(_edges).forEach(function(e) {
+                    var a = _nodes[e.from], b = _nodes[e.to];
+                    if (!a || !b) return;
+                    var ax = cx + a.x * _zoom, ay = cy + a.y * _zoom, bx = cx + b.x * _zoom, by = cy + b.y * _zoom, col = e.type === 'SG' ? COL.edgeSrv : COL.edgeGw;
+                    var grad = _ctx.createLinearGradient(ax, ay, bx, by);
+                    grad.addColorStop(0, col.replace('0.40', '0.7').replace('0.35', '0.7'));
+                    grad.addColorStop(1, col.replace('0.40', '0.1').replace('0.35', '0.1'));
+                    _ctx.save();
+                    _ctx.strokeStyle = grad; _ctx.lineWidth = 1.5; _ctx.setLineDash([6, 5]);
+                    _ctx.beginPath(); _ctx.moveTo(ax, ay); _ctx.lineTo(bx, by); _ctx.stroke(); _ctx.setLineDash([]);
+                    var ang = Math.atan2(by - ay, bx - ax);
+                    _ctx.fillStyle = col.replace('0.40', '0.75').replace('0.35', '0.7');
+                    _ctx.beginPath(); _ctx.moveTo(bx - 9 * Math.cos(ang), by - 9 * Math.sin(ang));
+                    _ctx.lineTo(bx - 9 * Math.cos(ang - 0.5), by - 9 * Math.sin(ang - 0.5));
+                    _ctx.lineTo(bx - 9 * Math.cos(ang + 0.5), by - 9 * Math.sin(ang + 0.5));
+                    _ctx.closePath(); _ctx.fill(); _ctx.restore();
+                });
+                
+                Object.values(_nodes).forEach(function(n) {
+                    var sx = cx + n.x * _zoom, sy = cy + n.y * _zoom, r = (n.type === 'SERVER' ? 22 : n.type === 'GATEWAY' ? 17 : 14) * _zoom;
+                    var col = n.type === 'SERVER' ? COL.server : (n.type === 'GATEWAY' ? COL.gateway : (n.alert ? COL.sensorAlert : COL.sensorOk));
+                    _ctx.save();
+                    if (n.type === 'SERVER') {
+                        var g = _ctx.createRadialGradient(sx, sy, 0, sx, sy, r * 2.2);
+                        g.addColorStop(0, 'rgba(0,172,193,0.16)'); g.addColorStop(1, 'transparent');
+                        _ctx.fillStyle = g; _ctx.beginPath(); _ctx.arc(sx, sy, r * 2.2, 0, Math.PI * 2); _ctx.fill();
+                        _ctx.fillStyle = '#101424'; _ctx.strokeStyle = col; _ctx.lineWidth = 2.5; _ctx.beginPath(); _ctx.roundRect(sx - r * 0.75, sy - r, r * 1.5, r * 2, 4); _ctx.fill(); _ctx.stroke();
+                    } else if (n.type === 'GATEWAY') {
+                        _ctx.fillStyle = '#101424'; _ctx.strokeStyle = col; _ctx.lineWidth = 2; _ctx.beginPath(); _ctx.roundRect(sx - r * 1.2, sy - r * 0.6, r * 2.4, r * 1.2, 4); _ctx.fill(); _ctx.stroke();
+                    } else {
+                        if (n.alert) {
+                            _ctx.strokeStyle = 'rgba(255,82,82,' + (0.45 + 0.45 * Math.sin(_tick * 0.09)) + ')'; _ctx.lineWidth = 2;
+                            _ctx.beginPath(); for (var i = 0; i < 6; i++) { var a = i * Math.PI / 3 - Math.PI / 6; _ctx.lineTo(sx + (r + 8) * Math.cos(a), sy + (r + 8) * Math.sin(a)); } _ctx.closePath(); _ctx.stroke();
+                        }
+                        _ctx.fillStyle = '#101424'; _ctx.strokeStyle = col; _ctx.lineWidth = 2.5;
+                        _ctx.beginPath(); for (var i = 0; i < 6; i++) { var a = i * Math.PI / 3 - Math.PI / 6; _ctx.lineTo(sx + r * Math.cos(a), sy + r * Math.sin(a)); } _ctx.closePath(); _ctx.fill(); _ctx.stroke();
+                        _ctx.fillStyle = col; _ctx.beginPath(); _ctx.arc(sx, sy, 4, 0, Math.PI * 2); _ctx.fill();
+                    }
+                    _ctx.fillStyle = '#fff'; _ctx.font = 'bold ' + Math.max(9, Math.round(10 * _zoom)) + 'px "Segoe UI",sans-serif';
+                    _ctx.textAlign = 'center'; _ctx.textBaseline = 'top'; _ctx.fillText(n.label, sx, sy + (n.type === 'SERVER' ? r : r) + 5); _ctx.restore();
+                });
+                
+                _tick++; _raf = requestAnimationFrame(_loop);
             }
-            window.topoResizeCanvas=function(){if(!_canvas)return;var rect=_canvas.getBoundingClientRect(),dpr=window.devicePixelRatio||1;_canvas.width=rect.width*dpr;_canvas.height=rect.height*dpr;_ctx.setTransform(dpr,0,0,dpr,0,0);_W=rect.width;_H=rect.height;};
-            document.addEventListener('DOMContentLoaded',function(){
-                _canvas=document.getElementById('topology-canvas');_ctx=_canvas.getContext('2d');topoResizeCanvas();
-                _canvas.addEventListener('mousedown',e=>{_panDrag={sx:e.clientX,sy:e.clientY,px:_pan.x,py:_pan.y};});
-                _canvas.addEventListener('mousemove',e=>{if(_panDrag){_pan.x=_panDrag.px+(e.clientX-_panDrag.sx);_pan.y=_panDrag.py+(e.clientY-_panDrag.sy);}});
-                _canvas.addEventListener('mouseup',()=>_panDrag=null);_canvas.addEventListener('mouseleave',()=>_panDrag=null);
-                _canvas.addEventListener('wheel',e=>{e.preventDefault();_zoom=Math.max(0.25,Math.min(3.5,_zoom*(e.deltaY<0?1.1:0.91)));},{passive:false});
-                window.addEventListener('resize',topoResizeCanvas);if(!_nodes['SERVER'])_nodes['SERVER']=mkNode('SERVER','SERVER','Server');_loop();
+            
+            window.topoResizeCanvas = function() {
+                if (!_canvas) return;
+                var rect = _canvas.getBoundingClientRect(), dpr = window.devicePixelRatio || 1;
+                _canvas.width = rect.width * dpr; _canvas.height = rect.height * dpr; _ctx.setTransform(dpr, 0, 0, dpr, 0, 0); _W = rect.width; _H = rect.height;
+            };
+            
+            document.addEventListener('DOMContentLoaded', function() {
+                _canvas = document.getElementById('topology-canvas'); _ctx = _canvas.getContext('2d'); topoResizeCanvas();
+                _canvas.addEventListener('mousedown', e => { _panDrag = { sx: e.clientX, sy: e.clientY, px: _pan.x, py: _pan.y }; });
+                _canvas.addEventListener('mousemove', e => { if (_panDrag) { _pan.x = _panDrag.px + (e.clientX - _panDrag.sx); _pan.y = _panDrag.py + (e.clientY - _panDrag.sy); } });
+                _canvas.addEventListener('mouseup', () => _panDrag = null); _canvas.addEventListener('mouseleave', () => _panDrag = null);
+                _canvas.addEventListener('wheel', e => { e.preventDefault(); _zoom = Math.max(0.25, Math.min(3.5, _zoom * (e.deltaY < 0 ? 1.1 : 0.91))); }, { passive: false });
+                window.addEventListener('resize', topoResizeCanvas);
+                if (!_nodes['SERVER']) _nodes['SERVER'] = mkNode('SERVER', 'SERVER', 'Server');
+                _loop();
             });
         })();
 

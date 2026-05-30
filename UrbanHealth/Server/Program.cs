@@ -37,6 +37,10 @@ class Program {
     private static System.Collections.Concurrent.ConcurrentDictionary<string, long> _latestServerFrameSequences = new();
     private static long _assembledServerFrames = 0;
 
+
+    private static System.Collections.Concurrent.ConcurrentDictionary<string, DateTime> _activeGateways = new();
+    private static System.Collections.Concurrent.ConcurrentDictionary<string, (string Gateway, DateTime LastSeen)> _activeSensors = new();
+
     static async Task Main(string[] args) {
         Console.WriteLine("[SYSTEM] Central Cloud Server Starting...");
         Console.WriteLine($"[DEBUG] Server UDP Port: {UdpPort}");
@@ -103,6 +107,16 @@ class Program {
                 try {
                     var msg = await Message.ReceiveMessageAsync(client);
                     if (msg == null) break;
+
+                    // --- ATUALIZAR ESTADO IN-MEMORY ---
+                    if (!string.IsNullOrEmpty(msg.GID)) {
+                        // O Gateway manda Heartbeats a cada 10s, por isso atualizamos sempre a hora dele
+                        _activeGateways[msg.GID] = DateTime.Now;
+                    }
+                    if (!string.IsNullOrEmpty(msg.SID) && msg.SID != "GATEWAY") {
+                        // Atualiza a presença do sensor sempre que ele manda um comando ou batch de dados
+                        _activeSensors[msg.SID] = (msg.GID, DateTime.Now);
+                    }
 
                     if (msg.CMD != "HB") {
                         Console.WriteLine($"[DEBUG TCP RX] Mensagem TCP Recebida: {msg.CMD} do Gateway {msg.GID} / Sensor {msg.SID}");
@@ -260,19 +274,23 @@ class Program {
 
             if (req.Url.AbsolutePath.ToLower() == "/api/status") {
                 try {
+                    // Vai buscar as leituras para a tabela
                     var readingsList = _db.GetRecentReadings(20);
-                    var gatewaySet = new HashSet<string>();
-                    foreach (var r in readingsList) {
-                        dynamic row = r;
-                        gatewaySet.Add((string)row.Gateway);
-                    }
+                    
+                    // Avalia quem está vivo na RAM
+                    // Gateways têm Timeout de 45 segs (enviam HB a cada 10s)
+                    var onlineGws = _activeGateways
+                        .Where(g => (DateTime.Now - g.Value).TotalSeconds < 45)
+                        .Select(g => g.Key).ToArray();
+
+                    // Sensores têm Timeout de 60 segs (o Gateway envia batch a cada 30s)
+                    var onlineSensors = _activeSensors
+                        .Where(s => (DateTime.Now - s.Value.LastSeen).TotalSeconds < 60)
+                        .Select(s => new { Sensor = s.Key, Gateway = s.Value.Gateway }).ToArray();
 
                     var statusData = new {
-                        gatewaysOnline = gatewaySet.ToArray(),
-                        activeSensors = readingsList.Select(r => new { 
-                            Sensor = (string)((dynamic)r).Sensor, 
-                            Gateway = (string)((dynamic)r).Gateway 
-                        }).Distinct().ToArray(),
+                        gatewaysOnline = onlineGws,
+                        activeSensors = onlineSensors,
                         readings = readingsList 
                     };
 

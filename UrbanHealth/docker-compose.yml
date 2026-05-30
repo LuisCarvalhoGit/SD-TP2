@@ -87,8 +87,8 @@ services:
     env_file: 
       - .env.local
     volumes:
-      - ./Gateway/Configs/gateway-config.json:/app/Configs/gateway-config.json
-      - ./Gateway/Configs/sensors-config.json:/app/Configs/sensors-config.json
+      - ./GatewayConfigs/gateway-config-G101.json:/app/Configs/gateway-config.json
+      - ./GatewayConfigs/sensors-config-G101.json:/app/Configs/sensors-config.json
     ports:
       - "${PORT_GATEWAY_UDP:-5004}:5004/udp"
     depends_on:

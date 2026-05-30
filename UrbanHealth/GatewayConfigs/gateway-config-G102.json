@@ -1,5 +1,5 @@
 {
-  "GatewayId": "G101",
+  "GatewayId": "G102",
   "Rabbitmq": {
     "Exchange": "urbanhealth_exchange",
     "RoutingKeys": [

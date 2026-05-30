@@ -1,7 +1,20 @@
 {
   "Description": "Sensor de Temperatura - Zona Norte",
-  "SupportedTypes": ["TEMP", "HUM", "VIDEO"],
+  "SupportedTypes": ["TEMP", "HUM", "CO2", "NOISE", "PM2", "UV", "VIDEO"],
   "FrequencySeconds": 5,
-  "TargetGatewayUdpPort": 5004,
-  "StreamAutoStopEnabled": true
+  "Networking": {
+    "TargetGatewayUdpPort": 5004,
+    "TargetGatewayIp": "host.docker.internal",
+    "TargetRabbitMqHost": "host.docker.internal",
+    "RabbitMq_User": "guest",
+    "RabbitMq_Password": "guest"
+  },
+  "Streaming": {
+    "Video_UDP_Chunk_Size": 1200,
+    "VIDEO_FRAME_INTERVAL_MS": 200,
+    "VIDEO_FRAME_CACHE_RELOAD_MS": 30000,
+    "VIDEO_PACKET_DELAY_MS": 0,
+    "STREAM_AUTO_STOP_ENABLED": true,
+    "STREAM_AUTO_STOP_AFTER_SECONDS": 5
+  }
 }

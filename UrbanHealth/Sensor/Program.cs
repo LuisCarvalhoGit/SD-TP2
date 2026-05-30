@@ -9,14 +9,53 @@ using System.Threading;
 using System.Threading.Tasks;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
+using System.Text.Json.Serialization;
 
 public class SensorConfiguration
 {
     public string Description { get; set; } = "Default Sensor";
     public string[] SupportedTypes { get; set; } = { "TEMP", "HUM", "PM2", "CO2", "NOISE", "UV", "VIDEO" };
     public int FrequencySeconds { get; set; } = 7;
+
+    // Conecta o sub-objeto JSON "Networking" a esta propriedade
+    public NetworkingConfig Networking { get; set; } = new NetworkingConfig();
+
+    // Conecta o sub-objeto JSON "Streaming" a esta propriedade
+    public StreamingConfig Streaming { get; set; } = new StreamingConfig();
+}
+
+public class NetworkingConfig
+{
     public int TargetGatewayUdpPort { get; set; } = 5004;
-    public bool StreamAutoStopEnabled { get; set; } = true;
+    public string TargetGatewayIp { get; set; } = "host.docker.internal";
+    public string TargetRabbitMqHost { get; set; } = "host.docker.internal";
+    
+    [JsonPropertyName("RabbitMq_User")]
+    public string RabbitMqUser { get; set; } = "guest";
+    
+    [JsonPropertyName("RabbitMq_Password")]
+    public string RabbitMqPassword { get; set; } = "guest";
+}
+
+public class StreamingConfig
+{
+    [JsonPropertyName("Video_UDP_Chunk_Size")]
+    public int VideoUDPChunkSize { get; set; } = 1200;
+
+    [JsonPropertyName("VIDEO_FRAME_INTERVAL_MS")]
+    public int VideoFrameIntervalMs { get; set; } = 200;
+
+    [JsonPropertyName("VIDEO_FRAME_CACHE_RELOAD_MS")]
+    public int VideoFrameCacheReloadMs { get; set; } = 30000;
+
+    [JsonPropertyName("VIDEO_PACKET_DELAY_MS")]
+    public int VideoPacketDelayMs { get; set; } = 0;
+
+    [JsonPropertyName("STREAM_AUTO_STOP_ENABLED")]
+    public bool StreamAutoStopEnabled { get; set; } = false;
+
+    [JsonPropertyName("STREAM_AUTO_STOP_AFTER_SECONDS")]
+    public int StreamAutoStopAfterSeconds { get; set; } = 30;
 }
 
 class Program {
@@ -33,14 +72,14 @@ class Program {
     private const string ExchangeName = "urbanhealth_exchange";
     private static readonly object _rmqLock = new object();
 
-    private static string GatewayIp = Environment.GetEnvironmentVariable("GATEWAY_IP") ?? "127.0.0.1";
-    private static int GatewayUdpPort = GetIntEnv("GATEWAY_UDP_PORT", 5004);
-    private static int VideoFrameIntervalMs = GetIntEnv("VIDEO_FRAME_INTERVAL_MS", 200);
-    private static int VideoPacketDelayMs = GetIntEnv("VIDEO_PACKET_DELAY_MS", 0);
-    private static int VideoChunkSize = GetIntEnv("VIDEO_UDP_CHUNK_SIZE", 1200);
-    private static int VideoFrameCacheReloadMs = GetIntEnv("VIDEO_FRAME_CACHE_RELOAD_MS", 30000);
-    private static bool StreamAutoStopEnabled = GetBoolEnv("STREAM_AUTO_STOP_ENABLED", true);
-    private static int StreamAutoStopAfterSeconds = GetIntEnv("STREAM_AUTO_STOP_AFTER_SECONDS", 30);
+    private static string GatewayIp;
+    private static int GatewayUdpPort;
+    private static int VideoFrameIntervalMs;
+    private static int VideoPacketDelayMs;
+    private static int VideoChunkSize;
+    private static int VideoFrameCacheReloadMs;
+    private static bool StreamAutoStopEnabled;
+    private static int StreamAutoStopAfterSeconds;
 
     private sealed class CachedVideoFrame {
         public CachedVideoFrame(string name, byte[] bytes) {
@@ -55,29 +94,8 @@ class Program {
     static async Task Main(string[] args) {
         if (args.Length >= 1) SID = args[0];
 
-        Console.WriteLine($"[SYSTEM] Starting Sensor {SID} (RabbitMQ + UDP)...");
-        Console.WriteLine($"[DEBUG] Target Gateway UDP: {GatewayIp}:{GatewayUdpPort}");
-
-        // Validate configuration
-        if (string.IsNullOrWhiteSpace(GatewayIp)) {
-            Console.WriteLine("[ERROR] GATEWAY_IP not configured!");
-            Environment.Exit(1);
-        }
-        if (GatewayUdpPort <= 0 || GatewayUdpPort > 65535) {
-            Console.WriteLine($"[ERROR] GATEWAY_UDP_PORT invalid: {GatewayUdpPort}");
-            Environment.Exit(1);
-        }
-
-        InitRabbitMQ();
-
-        Console.WriteLine($"[SYSTEM] Starting Sensor {SID}...");
-
         string configFilePath = $"/app/configs/sensor-config-{SID}.json";
 
-        if (!Environment.GetEnvironmentVariable("ENVIRONMENT")?.Equals("Production") ?? true)
-        {
-            configFilePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, $"../../../SensorConfigs/sensor-config-{SID}.json");
-        }
 
         if (File.Exists(configFilePath))
         {
@@ -85,13 +103,20 @@ class Program {
             {
                 
                 string jsonString = File.ReadAllText(configFilePath);
-                _config = JsonSerializer.Deserialize<SensorConfiguration>(jsonString) ?? new SensorConfiguration();
+                var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
+                _config = JsonSerializer.Deserialize<SensorConfiguration>(jsonString, options) ?? new SensorConfiguration();
 
+                GatewayIp = _config.Networking.TargetGatewayIp;
+                GatewayUdpPort = _config.Networking.TargetGatewayUdpPort;
+
+                VideoFrameIntervalMs = _config.Streaming.VideoFrameIntervalMs;
+                VideoPacketDelayMs = _config.Streaming.VideoPacketDelayMs;
+                VideoFrameCacheReloadMs = _config.Streaming.VideoFrameCacheReloadMs;
+                VideoChunkSize = _config.Streaming.VideoUDPChunkSize;
+                StreamAutoStopEnabled = _config.Streaming.StreamAutoStopEnabled;
+                StreamAutoStopAfterSeconds = _config.Streaming.StreamAutoStopAfterSeconds;
+                
                 Console.WriteLine($"[SYSTEM] Loaded config: {_config.Description}");
-
-                // AQUI ESCOLHER O QUE MIGRAR
-                GatewayUdpPort = _config.TargetGatewayUdpPort;
-                StreamAutoStopEnabled = _config.StreamAutoStopEnabled;
 
             } catch (Exception ex)
             {
@@ -100,8 +125,27 @@ class Program {
 
         } else
         {
-            Console.WriteLine($"[WARNING] File {configFilePath} not found. Using defaulr configuration.");
+            Console.WriteLine($"[WARNING] File {configFilePath} not found. Using default configuration.");
         }
+
+        Console.WriteLine($"[SYSTEM] Starting Sensor {SID} (RabbitMQ + UDP)...");
+        Console.WriteLine($"[DEBUG] Target Gateway UDP: {GatewayIp}:{GatewayUdpPort}");
+
+        // Validate configuration
+        if (string.IsNullOrWhiteSpace(GatewayIp)) {
+            Console.WriteLine("[ERROR] GATEWAY_IP not configured!");
+            Environment.Exit(1);
+        }
+        if (GatewayUdpPort <= 1000 || GatewayUdpPort > 65535) {
+            Console.WriteLine($"[ERROR] GATEWAY_UDP_PORT invalid: {GatewayUdpPort}");
+            Environment.Exit(1);
+        }
+
+        
+
+        Console.WriteLine($"[SYSTEM] Starting Sensor {SID}...");
+
+        InitRabbitMQ();
 
         Console.WriteLine("==================================================");
         Console.WriteLine(" Menu: DATA <TYPE> <VAL> | STRM START | STRM STOP | DISCONN");
@@ -157,9 +201,9 @@ class Program {
 
     private static void InitRabbitMQ() {
         var factory = new ConnectionFactory() {
-            HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
-            UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
-            Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
+            HostName = _config.Networking.TargetRabbitMqHost,
+            UserName = _config.Networking.RabbitMqUser,
+            Password = _config.Networking.RabbitMqPassword,
             AutomaticRecoveryEnabled = true,
             TopologyRecoveryEnabled = true,
             NetworkRecoveryInterval = TimeSpan.FromSeconds(5),
@@ -248,11 +292,13 @@ class Program {
     private static async Task DataGenerationRoutineAsync() {
         Random rnd = new Random();
         while (true) {
-            await Task.Delay(_config.FrequencySeconds * 1000);
 
             if (_config.SupportedTypes == null || _config.SupportedTypes.Length == 0) continue;
 
             string selectedType = _config.SupportedTypes[rnd.Next(_config.SupportedTypes.Length)];
+
+            if (selectedType == "VIDEO") continue;
+
             double value = selectedType switch {
                 "TEMP" => 15.0 + (rnd.NextDouble() * 20.0), "HUM" => 40.0 + (rnd.NextDouble() * 40.0),
                 "PM2" => 5.0 + (rnd.NextDouble() * 45.0), "CO2" => 400.0 + (rnd.NextDouble() * 600.0),
@@ -261,6 +307,8 @@ class Program {
             string strValue = value.ToString("0.0", System.Globalization.CultureInfo.InvariantCulture);
             PublishMessage(selectedType, strValue);
             HandleAlertLogic(selectedType, value);
+
+            await Task.Delay(_config.FrequencySeconds * 1000);
         }
     }
 
@@ -361,15 +409,4 @@ class Program {
         return frames;
     }
 
-    private static int GetIntEnv(string name, int defaultValue) {
-        return int.TryParse(Environment.GetEnvironmentVariable(name), out int value) ? value : defaultValue;
-    }
-
-    private static bool GetBoolEnv(string name, bool defaultValue) {
-        string raw = Environment.GetEnvironmentVariable(name);
-        if (string.IsNullOrWhiteSpace(raw)) return defaultValue;
-        return raw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
-    }
 }

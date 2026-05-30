@@ -10,22 +10,41 @@ using System.Threading.Tasks;
 namespace Gateway {
 
     public class RabbitMQConfig {
+        [JsonPropertyName("Exchange")]
         public string Exchange { get; set; } = "urbanhealth_exchange";
+
+        [JsonPropertyName("RoutingKeys")]
         public List<string> RoutingKeys { get; set; } = new List<string> { "sensor.#" };
-        public int ConnectionRetries { get; set; } = 20;
+
+        [JsonPropertyName("ConnectionRetries")]
+        public int ConnectionRetries { get; set; } = 30;
+
+        [JsonPropertyName("RetryDelayMs")]
         public int RetryDelayMs { get; set; } = 3000;
     }
 
     public class TimingConfig {
+        [JsonPropertyName("BatchIntervalMs")]
         public int BatchIntervalMs { get; set; } = 30000;
+
+        [JsonPropertyName("HeartbeatIntervalMs")]
         public int HeartbeatIntervalMs { get; set; } = 10000;
+
+        [JsonPropertyName("SensorTimeoutCheckMs")]
         public int SensorTimeoutCheckMs { get; set; } = 5000;
+
+        [JsonPropertyName("SensorTimeoutThresholdSecs")]
         public int SensorTimeoutThresholdSecs { get; set; } = 30;
     }
 
     public class GatewayConfig {
+        [JsonPropertyName("GatewayId")]
         public string GatewayId { get; set; } = "G101";
+
+        [JsonPropertyName("Rabbitmq")]
         public RabbitMQConfig Rabbitmq { get; set; } = new RabbitMQConfig();
+
+        [JsonPropertyName("Timings")]
         public TimingConfig Timings { get; set; } = new TimingConfig();
     }
 
@@ -117,6 +136,19 @@ namespace Gateway {
                 sensor.State = status;
                 sensor.LastSync = DateTime.Now;
                 SaveSensorsConfig();
+            }
+        }
+
+        public void UpdateSensorDataTypes(string sensorId, string dataTypes) {
+            if (_sensors.TryGetValue(sensorId, out var sensor)) {
+                // Só acede ao disco (SaveSensorsConfig) se houver realmente uma diferença
+                // Isto evita desgaste de I/O no disco sempre que um sensor se reconecta
+                if (sensor.DataTypes != dataTypes) {
+                    sensor.DataTypes = dataTypes;
+                    sensor.LastSync = DateTime.Now;
+                    SaveSensorsConfig();
+                    Console.WriteLine($"[CONFIG] Capacidades do sensor {sensorId} atualizadas no JSON: {dataTypes}");
+                }
             }
         }
     }
