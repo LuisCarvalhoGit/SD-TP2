@@ -1,10 +1,29 @@
 {
   "GatewayId": "G101",
+  "Networking": {
+    "UdpListenPort": 5004,
+    "ServerIp": "host.docker.internal",
+    "ServerPort": 5001,
+    "ServerUdpPort": 5003,
+    "RabbitMqHost": "host.docker.internal",
+    "RabbitMq_User": "guest",
+    "RabbitMq_Password": "guest"
+  },
+  "Streaming": {
+    "Video_UDP_Chunk_Size": 1200,
+    "VIDEO_FRAME_INTERVAL_MS": 200,
+    "VIDEO_FRAME_CACHE_RELOAD_MS": 30000,
+    "VIDEO_PACKET_DELAY_MS": 0,
+    "VIDEO_FRAME_TTL_MS": 750,
+    "VIDEO_MAX_PENDING_FRAMES_PER_SENSOR": 3,
+    "VIDEO_MAX_FRAME_BYTES": 4194304,
+    "VIDEO_MAX_PARTS_PER_FRAME": 512,
+    "VIDEO_DEBUG_PACKETS": false,
+    "GATEWAY_ENABLE_LOCAL_VIDEO_PREVIEW": false
+  },
   "Rabbitmq": {
     "Exchange": "urbanhealth_exchange",
-    "RoutingKeys": [
-      "sensor.#"
-    ],
+    "RoutingKeys": ["sensor.#"],
     "ConnectionRetries": 30,
     "RetryDelayMs": 3000
   },

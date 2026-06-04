@@ -9,6 +9,61 @@ using System.Threading.Tasks;
 
 namespace Gateway {
 
+    public class NetworkingConfig {
+        [JsonPropertyName("UdpListenPort")]
+        public int UdpListenPort { get; set; } = 5004;
+
+        [JsonPropertyName("ServerIp")]
+        public string ServerIp { get; set; } = "127.0.0.1";
+
+        [JsonPropertyName("ServerPort")]
+        public int ServerPort { get; set; } = 5001;
+
+        [JsonPropertyName("ServerUdpPort")]
+        public int ServerUdpPort { get; set; } = 5003;
+
+        [JsonPropertyName("RabbitMqHost")]
+        public string RabbitMqHost { get; set; } = "localhost";
+
+        [JsonPropertyName("RabbitMq_User")]
+        public string RabbitMqUser { get; set; } = "guest";
+
+        [JsonPropertyName("RabbitMq_Password")]
+        public string RabbitMqPassword { get; set; } = "guest";
+    }
+
+    public class StreamingConfig {
+        [JsonPropertyName("Video_UDP_Chunk_Size")]
+        public int VideoUdpChunkSize { get; set; } = 1200;
+
+        [JsonPropertyName("VIDEO_FRAME_INTERVAL_MS")]
+        public int VideoFrameIntervalMs { get; set; } = 200;
+
+        [JsonPropertyName("VIDEO_FRAME_CACHE_RELOAD_MS")]
+        public int VideoFrameCacheReloadMs { get; set; } = 30000;
+
+        [JsonPropertyName("VIDEO_PACKET_DELAY_MS")]
+        public int VideoPacketDelayMs { get; set; } = 0;
+
+        [JsonPropertyName("VIDEO_FRAME_TTL_MS")]
+        public int VideoFrameTtlMs { get; set; } = 750;
+
+        [JsonPropertyName("VIDEO_MAX_PENDING_FRAMES_PER_SENSOR")]
+        public int VideoMaxPendingFramesPerSensor { get; set; } = 3;
+
+        [JsonPropertyName("VIDEO_MAX_FRAME_BYTES")]
+        public int VideoMaxFrameBytes { get; set; } = 4194304;
+
+        [JsonPropertyName("VIDEO_MAX_PARTS_PER_FRAME")]
+        public int VideoMaxPartsPerFrame { get; set; } = 512;
+
+        [JsonPropertyName("VIDEO_DEBUG_PACKETS")]
+        public bool VideoDebugPackets { get; set; } = false;
+
+        [JsonPropertyName("GATEWAY_ENABLE_LOCAL_VIDEO_PREVIEW")]
+        public bool GatewayEnableLocalVideoPreview { get; set; } = false;
+    }
+
     public class RabbitMQConfig {
         [JsonPropertyName("Exchange")]
         public string Exchange { get; set; } = "urbanhealth_exchange";
@@ -40,6 +95,12 @@ namespace Gateway {
     public class GatewayConfig {
         [JsonPropertyName("GatewayId")]
         public string GatewayId { get; set; } = "G101";
+
+        [JsonPropertyName("Networking")]
+        public NetworkingConfig Networking { get; set; } = new NetworkingConfig();
+
+        [JsonPropertyName("Streaming")]
+        public StreamingConfig Streaming { get; set; } = new StreamingConfig();
 
         [JsonPropertyName("Rabbitmq")]
         public RabbitMQConfig Rabbitmq { get; set; } = new RabbitMQConfig();

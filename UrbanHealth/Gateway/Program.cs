@@ -26,8 +26,8 @@ public class SensorPayload {
 
 class Program {
     private static string GID;
-    private static readonly string RawServerIp = Environment.GetEnvironmentVariable("SERVER_IP") ?? "127.0.0.1";
-    private static readonly int ServerPort = GetIntEnv("SERVER_PORT", 5001);
+    private static ConfigManager _config = new ConfigManager();
+    private static LocalCacheManager _cache = new LocalCacheManager();
 
     private static IModel _rmqChannel;
     private static IConnection _rmqConnection;
@@ -35,18 +35,17 @@ class Program {
     private static readonly SemaphoreSlim _serverTxLock = new SemaphoreSlim(1, 1);
     private static readonly Random _rnd = new Random();
 
+    private static string RawServerIp;
+    private static int ServerPort;
+    private static int UdpPort;
+    private static int ServerUdpPort;
+    private static bool EnableLocalVideoPreview;
+    private static bool VideoDebugPackets;
+
     // UDP Video Routing
     private static UdpClient _udpListener;
     private static UdpClient _serverUdpClient = new UdpClient();
-    private static readonly int UdpPort = GetIntEnv("GATEWAY_UDP_PORT", 5004);
-    private static readonly int ServerUdpPort = GetIntEnv("SERVER_UDP_PORT", 5003);
-    private static readonly bool EnableLocalVideoPreview = GetBoolEnv("GATEWAY_ENABLE_LOCAL_VIDEO_PREVIEW", true);
-    private static readonly bool VideoDebugPackets = GetBoolEnv("VIDEO_DEBUG_PACKETS", false);
-    private static readonly VideoFrameAssembler _videoAssembler = new VideoFrameAssembler(
-        TimeSpan.FromMilliseconds(GetIntEnv("VIDEO_FRAME_TTL_MS", 750)),
-        GetIntEnv("VIDEO_MAX_PENDING_FRAMES_PER_SENSOR", 3),
-        GetIntEnv("VIDEO_MAX_FRAME_BYTES", 4 * 1024 * 1024),
-        GetIntEnv("VIDEO_MAX_PARTS_PER_FRAME", 512));
+    private static VideoFrameAssembler _videoAssembler;
     private static IPEndPoint? _serverUdpEndpoint;
     private static DateTime _nextServerUdpResolveUtc = DateTime.MinValue;
     private static long _forwardedVideoPackets = 0;
@@ -54,9 +53,6 @@ class Program {
 
     private static ConcurrentDictionary<string, byte[]> _latestFrames = new();
     private static ConcurrentDictionary<string, bool> _activeStreams = new();
-
-    private static ConfigManager _config = new ConfigManager();
-    private static LocalCacheManager _cache = new LocalCacheManager();
     private static ConcurrentDictionary<string, DateTime> _activeSensors = new();
     private static readonly object _bufferLock = new object();
     private static Dictionary<(string, string), List<(DateTime, double)>> _valuesToForward = new();
@@ -80,7 +76,20 @@ class Program {
 
     static async Task Main(string[] args) {
         _config.LoadConfig();
-        GID =_config.GatewayInfo.GatewayId;
+        GID = _config.GatewayInfo.GatewayId;
+
+        RawServerIp = _config.GatewayInfo.Networking.ServerIp;
+        ServerPort = _config.GatewayInfo.Networking.ServerPort;
+        UdpPort = _config.GatewayInfo.Networking.UdpListenPort;
+        ServerUdpPort = _config.GatewayInfo.Networking.ServerUdpPort;
+        EnableLocalVideoPreview = _config.GatewayInfo.Streaming.GatewayEnableLocalVideoPreview;
+        VideoDebugPackets = _config.GatewayInfo.Streaming.VideoDebugPackets;
+
+        _videoAssembler = new VideoFrameAssembler(
+            TimeSpan.FromMilliseconds(_config.GatewayInfo.Streaming.VideoFrameTtlMs),
+            _config.GatewayInfo.Streaming.VideoMaxPendingFramesPerSensor,
+            _config.GatewayInfo.Streaming.VideoMaxFrameBytes,
+            _config.GatewayInfo.Streaming.VideoMaxPartsPerFrame);
 
         Console.WriteLine($"[SYSTEM] Starting Gateway {GID}...");
         Console.WriteLine($"[DEBUG] Target Cloud TCP: {RawServerIp}:{ServerPort}");
@@ -121,9 +130,9 @@ class Program {
 
     private static void StartRabbitMQConsumer() {
         var factory = new ConnectionFactory() {
-            HostName = Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
-            UserName = Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
-            Password = Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
+            HostName = _config.GatewayInfo.Networking.RabbitMqHost ?? Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+            UserName = _config.GatewayInfo.Networking.RabbitMqUser ?? Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
+            Password = _config.GatewayInfo.Networking.RabbitMqPassword ?? Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
             AutomaticRecoveryEnabled = true,
             TopologyRecoveryEnabled = true,
             NetworkRecoveryInterval = TimeSpan.FromSeconds(5),
@@ -138,27 +147,24 @@ class Program {
             try {
                 _rmqConnection = factory.CreateConnection();
                 _rmqChannel = _rmqConnection.CreateModel();
-                
+
                 string exchange = _config.GatewayInfo.Rabbitmq.Exchange ?? "urbanhealth_exchange";
                 List<string> routingKeys = _config.GatewayInfo.Rabbitmq.RoutingKeys;
 
-                // Salvaguarda caso a lista não exista no JSON ou esteja vazia
                 if (routingKeys == null || routingKeys.Count <= 0)
                 {
                     routingKeys = new List<string> { "sensor.#" };
                 }
 
                 _rmqChannel.ExchangeDeclare(exchange: exchange, type: ExchangeType.Topic);
-                
+
                 var queueName = _rmqChannel.QueueDeclare().QueueName;
 
-                // Iterar sobre a lista e ligar a mesma Queue a cada uma das Routing Keys
                 foreach (var routingKey in routingKeys)
                 {
                     _rmqChannel.QueueBind(queue: queueName, exchange: exchange, routingKey: routingKey);
                 }
 
-                // Garante que o Gateway processa no máximo 200 mensagens em simultâneo
                 _rmqChannel.BasicQos(prefetchSize: 0, prefetchCount: 200, global: false);
 
                 var consumer = new EventingBasicConsumer(_rmqChannel);
@@ -543,10 +549,11 @@ class Program {
         while (true) {
             await Task.Delay(_config.GatewayInfo.Timings.SensorTimeoutCheckMs);
             bool stateChanged = false;
+            int thresholdSecs = _config.GatewayInfo.Timings.SensorTimeoutThresholdSecs;
             foreach (var sensor in _activeSensors) {
-                if ((DateTime.Now - sensor.Value).TotalSeconds > 30) {
+                if ((DateTime.Now - sensor.Value).TotalSeconds > thresholdSecs) {
                     _activeSensors.TryRemove(sensor.Key, out _);
-                    _activeStreams.TryRemove(sensor.Key, out _); 
+                    _activeStreams.TryRemove(sensor.Key, out _);
                     _config.UpdateSensorState(sensor.Key, "offline");
                     stateChanged = true;
                 }
@@ -620,15 +627,4 @@ class Program {
         } catch { }
     }
 
-    private static int GetIntEnv(string name, int defaultValue) {
-        return int.TryParse(Environment.GetEnvironmentVariable(name), out int value) ? value : defaultValue;
-    }
-
-    private static bool GetBoolEnv(string name, bool defaultValue) {
-        string raw = Environment.GetEnvironmentVariable(name);
-        if (string.IsNullOrWhiteSpace(raw)) return defaultValue;
-        return raw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
-    }
 }

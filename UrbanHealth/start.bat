@@ -5,27 +5,27 @@ color 0B
 :MENU
 cls
 echo =======================================================
-echo          URBANHEALTH - EDGE IOT CONTROL PANEL
+echo                     CONTROL PANEL
 echo =======================================================
 echo.
 echo   --- INICIAR ---
 echo   1. Ligar TUDO (Orquestracao Completa Sequencial)
-echo   2. Ligar apenas Cloud Server
+echo   2. Ligar apenas Server
 echo   3. Ligar apenas Broker [RabbitMQ]
-echo   4. Ligar apenas Edge Gateways
-echo   5. Ligar apenas IoT Sensors
+echo   4. Ligar apenas Gateways
+echo   5. Ligar apenas Sensores
 echo.
 echo   --- PARAR ---
 echo   6. Desligar TUDO
-echo   7. Desligar apenas Cloud Server
+echo   7. Desligar apenas Server
 echo   8. Desligar apenas Broker [RabbitMQ]
-echo   9. Desligar apenas Edge Gateways
-echo   A. Desligar apenas IoT Sensors
+echo   9. Desligar apenas Gateways
+echo   A. Desligar apenas Sensores
 echo.
 echo   --- GESTAO ---
 echo   B. Ver Estado da Rede (Docker PS)
 echo   L. Ver Logs Globais (Em tempo real)
-echo   0. Limpeza Total (O "Botao de Panico")
+echo   0. Limpeza Total
 echo   S. Sair
 echo.
 echo =======================================================
@@ -53,16 +53,16 @@ cls
 echo A iniciar orquestracao completa com verificacao de estado...
 echo.
 
-echo [1/5] A iniciar Cloud Server...
+echo [1/5] A iniciar Server...
 docker-compose -f docker-compose.server.yml up -d --build
 :WAIT_SERVER
 timeout /t 3 /nobreak > NUL
 SET STATUS=starting
 FOR /F "tokens=*" %%g IN ('docker inspect --format="{{.State.Status}}" csharp-server 2^>NUL') DO (SET STATUS=%%g)
 if /I "%STATUS%" == "running" (
-    echo [SUCESSO] Cloud Server esta ONLINE!
+    echo [SUCESSO] Server esta ONLINE!
 ) else (
-    echo ... a aguardar Cloud Server...
+    echo ... a aguardar Server...
     goto WAIT_SERVER
 )
 echo.
@@ -86,32 +86,32 @@ echo [3/5] A criar rede de comunicacaoo do Broker...
 docker network create urban-broker 2>NUL
 echo.
 
-echo [4/5] A iniciar Edge Gateways...
+echo [4/5] A iniciar Gateways...
 docker-compose -f docker-compose.gateway.yml up -d --build
 :WAIT_GATEWAY
 timeout /t 3 /nobreak > NUL
 SET STATUS=starting
 FOR /F "tokens=*" %%g IN ('docker inspect --format="{{.State.Status}}" gateway-g101 2^>NUL') DO (SET STATUS=%%g)
 if /I "%STATUS%" == "running" (
-    echo [SUCESSO] Gateway G101 esta ONLINE e ligado ao RabbitMQ!
+    echo [SUCESSO] Gateways ONLINE e ligados ao RabbitMQ!
 ) else (
-    echo ... a aguardar Gateway...
+    echo ... a aguardar Gateways...
     goto WAIT_GATEWAY
 )
 echo.
 
-echo [5/5] A iniciar IoT Sensors...
+echo [5/5] A iniciar Sensores...
 docker-compose -f docker-compose.sensor.yml up -d --build
 echo.
-echo [SUCESSO] Toda a infraestrutura esta online na sequencia perfeita!
+echo [SUCESSO] Toda a infraestrutura esta online!
 pause
 goto MENU
 
 :START_SERVER
 cls
-echo A iniciar apenas a Cloud...
+echo A iniciar apenas o Server...
 docker-compose -f docker-compose.server.yml up -d --build
-echo [SUCESSO] Servidor Central online.
+echo [SUCESSO] Servidor online.
 pause
 goto MENU
 
@@ -137,7 +137,7 @@ goto MENU
 
 :START_GATEWAY
 cls
-echo A iniciar Edge Gateways...
+echo A iniciar Gateways...
 echo [NOTA] Certifica-te que o Broker [RabbitMQ] esta a correr primeiro!
 docker-compose -f docker-compose.gateway.yml up -d --build
 echo [SUCESSO] Gateways online.
@@ -146,7 +146,7 @@ goto MENU
 
 :START_SENSORS
 cls
-echo A iniciar apenas os Sensores IoT...
+echo A iniciar apenas os Sensores...
 docker-compose -f docker-compose.sensor.yml up -d --build
 echo [SUCESSO] Sensores online.
 pause
@@ -164,7 +164,7 @@ echo [2/4] A desligar Gateways...
 docker-compose -f docker-compose.gateway.yml down
 echo [SUCESSO] Gateways desligados.
 echo.
-echo [3/4] A desligar Servidor Central...
+echo [3/4] A desligar Servidor...
 docker-compose -f docker-compose.server.yml down
 echo [SUCESSO] Servidor Central desligado.
 echo.
@@ -172,15 +172,15 @@ echo [4/4] A desligar Broker...
 docker-compose -f docker-compose.broker.yml down
 echo [SUCESSO] Broker desligado.
 echo.
-echo [SUCESSO] Tudo desligado corretamente!
+echo [SUCESSO] Tudo desligado!
 pause
 goto MENU
 
 :STOP_SERVER
 cls
-echo A desligar a Cloud...
+echo A desligar o Server...
 docker-compose -f docker-compose.server.yml down
-echo [SUCESSO] Servidor Central desligado.
+echo [SUCESSO] Servidor desligado.
 pause
 goto MENU
 
@@ -194,7 +194,7 @@ goto MENU
 
 :STOP_GATEWAY
 cls
-echo A desligar Gateways Edge...
+echo A desligar Gateways...
 docker-compose -f docker-compose.gateway.yml down
 echo [SUCESSO] Gateways desligados.
 pause
@@ -219,7 +219,7 @@ goto MENU
 :SHOW_LOGS
 cls
 echo =======================================================
-echo               CENTRAL DE LOGS GLOBAIS
+echo                    CENTRAL DE LOGS
 echo =======================================================
 echo [!] Pressiona CTRL+C para parar de seguir os logs.
 echo Se o Windows perguntar "Terminar o ficheiro batch (S/N)?", escreve N para voltar ao menu.
@@ -236,7 +236,7 @@ if /I "%confirm%" neq "S" goto MENU
 FOR /f "tokens=*" %%i IN ('docker ps -aq') DO docker rm -f %%i
 docker network prune -f
 echo.
-echo [SUCESSO] Ambiente completamente limpo.
+echo [SUCESSO] Ambiente limpo.
 pause
 goto MENU
 
