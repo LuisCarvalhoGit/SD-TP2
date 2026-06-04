@@ -14,6 +14,7 @@ using System.Threading;
 using System.Threading.Channels;
 
 class Program {
+    private static readonly ServerRuntimeConfig _config = ServerRuntimeConfig.Load();
     private static DataBaseManager _db = new DataBaseManager();
     private static AnalysisService.AnalysisServiceClient _rpcClient;
 
@@ -24,15 +25,15 @@ class Program {
     private static readonly Channel<ReadingData> _dbQueue = Channel.CreateUnbounded<ReadingData>();
 
     private static UdpClient _udpListener;
-    private static readonly int TcpPort = GetIntEnv("PORT_SERVER_TCP", 5001);
-    private static readonly int DashboardPort = GetIntEnv("PORT_DASHBOARD", 8081);
-    private static readonly int UdpPort = GetIntEnv("SERVER_UDP_PORT", 5003);
-    private static readonly bool VideoDebugPackets = GetBoolEnv("VIDEO_DEBUG_PACKETS", false);
+    private static readonly int TcpPort = _config.Networking.TcpPort;
+    private static readonly int DashboardPort = _config.Networking.DashboardPort;
+    private static readonly int UdpPort = _config.Networking.UdpPort;
+    private static readonly bool VideoDebugPackets = _config.Streaming.VideoDebugPackets;
     private static readonly VideoFrameAssembler _videoAssembler = new VideoFrameAssembler(
-        TimeSpan.FromMilliseconds(GetIntEnv("VIDEO_FRAME_TTL_MS", 750)),
-        GetIntEnv("VIDEO_MAX_PENDING_FRAMES_PER_SENSOR", 3),
-        GetIntEnv("VIDEO_MAX_FRAME_BYTES", 4 * 1024 * 1024),
-        GetIntEnv("VIDEO_MAX_PARTS_PER_FRAME", 512));
+        TimeSpan.FromMilliseconds(_config.Streaming.VideoFrameTtlMs),
+        _config.Streaming.VideoMaxPendingFramesPerSensor,
+        _config.Streaming.VideoMaxFrameBytes,
+        _config.Streaming.VideoMaxPartsPerFrame);
     private static System.Collections.Concurrent.ConcurrentDictionary<string, byte[]> _latestServerFrames = new();
     private static System.Collections.Concurrent.ConcurrentDictionary<string, long> _latestServerFrameSequences = new();
     private static long _assembledServerFrames = 0;
@@ -45,10 +46,12 @@ class Program {
         Console.WriteLine("[SYSTEM] Central Cloud Server Starting...");
         Console.WriteLine($"[DEBUG] Server UDP Port: {UdpPort}");
 
-        string rpcUrl = Environment.GetEnvironmentVariable("ANALYSIS_RPC_URL") ?? "http://localhost:50052";
+        string rpcUrl = EndpointResolver.ResolveHttpUrl(
+            _config.Networking.AnalysisRpcUrl ?? Environment.GetEnvironmentVariable("ANALYSIS_RPC_URL"),
+            "http://local:50052");
         var channel = GrpcChannel.ForAddress(rpcUrl);
         _rpcClient = new AnalysisService.AnalysisServiceClient(channel);
-        Console.WriteLine("[RPC] Connection active with Analysis Engine on port 50052.");
+        Console.WriteLine($"[RPC] Analysis endpoint: {rpcUrl}");
 
         _udpListener = new UdpClient(UdpPort);
 
@@ -417,15 +420,4 @@ class Program {
         res.Headers["Expires"] = "0";
     }
 
-    private static int GetIntEnv(string name, int defaultValue) {
-        return int.TryParse(Environment.GetEnvironmentVariable(name), out int value) ? value : defaultValue;
-    }
-
-    private static bool GetBoolEnv(string name, bool defaultValue) {
-        string raw = Environment.GetEnvironmentVariable(name);
-        if (string.IsNullOrWhiteSpace(raw)) return defaultValue;
-        return raw.Equals("1", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("true", StringComparison.OrdinalIgnoreCase) ||
-               raw.Equals("yes", StringComparison.OrdinalIgnoreCase);
-    }
 }

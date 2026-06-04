@@ -22,6 +22,9 @@ namespace Gateway {
         [JsonPropertyName("ServerUdpPort")]
         public int ServerUdpPort { get; set; } = 5003;
 
+        [JsonPropertyName("PreprocessRpcUrl")]
+        public string PreprocessRpcUrl { get; set; } = "http://local:50051";
+
         [JsonPropertyName("RabbitMqHost")]
         public string RabbitMqHost { get; set; } = "localhost";
 

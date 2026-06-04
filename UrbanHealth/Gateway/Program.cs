@@ -78,7 +78,7 @@ class Program {
         _config.LoadConfig();
         GID = _config.GatewayInfo.GatewayId;
 
-        RawServerIp = _config.GatewayInfo.Networking.ServerIp;
+        RawServerIp = EndpointResolver.ResolveHost(_config.GatewayInfo.Networking.ServerIp);
         ServerPort = _config.GatewayInfo.Networking.ServerPort;
         UdpPort = _config.GatewayInfo.Networking.UdpListenPort;
         ServerUdpPort = _config.GatewayInfo.Networking.ServerUdpPort;
@@ -97,7 +97,10 @@ class Program {
         Console.WriteLine($"[DEBUG] Listening UDP from Sensors on port: {UdpPort}");
         Console.WriteLine($"[DEBUG] Local video preview: {(EnableLocalVideoPreview ? "enabled" : "disabled")}");
 
-        string rpcUrl = Environment.GetEnvironmentVariable("PREPROCESS_RPC_URL") ?? "http://localhost:50051";
+        string rpcUrl = EndpointResolver.ResolveHttpUrl(
+            _config.GatewayInfo.Networking.PreprocessRpcUrl ?? Environment.GetEnvironmentVariable("PREPROCESS_RPC_URL"),
+            "http://local:50051");
+        Console.WriteLine($"[RPC] PreProcessing endpoint: {rpcUrl}");
         var grpcChannel = GrpcChannel.ForAddress(rpcUrl);
         _rpcClient = new PreProcessingService.PreProcessingServiceClient(grpcChannel);
 
@@ -130,7 +133,7 @@ class Program {
 
     private static void StartRabbitMQConsumer() {
         var factory = new ConnectionFactory() {
-            HostName = _config.GatewayInfo.Networking.RabbitMqHost ?? Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "localhost",
+            HostName = EndpointResolver.ResolveHost(_config.GatewayInfo.Networking.RabbitMqHost ?? Environment.GetEnvironmentVariable("RABBITMQ_HOST") ?? "local"),
             UserName = _config.GatewayInfo.Networking.RabbitMqUser ?? Environment.GetEnvironmentVariable("RABBITMQ_USER") ?? "guest",
             Password = _config.GatewayInfo.Networking.RabbitMqPassword ?? Environment.GetEnvironmentVariable("RABBITMQ_PASSWORD") ?? "guest",
             AutomaticRecoveryEnabled = true,

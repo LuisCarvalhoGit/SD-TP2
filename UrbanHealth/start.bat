@@ -53,7 +53,7 @@ cls
 echo A iniciar orquestracao completa com verificacao de estado...
 echo.
 
-echo [1/5] A iniciar Server...
+echo [1/4] A iniciar Server...
 docker-compose -f docker-compose.server.yml up -d --build
 :WAIT_SERVER
 timeout /t 3 /nobreak > NUL
@@ -67,7 +67,7 @@ if /I "%STATUS%" == "running" (
 )
 echo.
 
-echo [2/5] A iniciar o Broker de Mensagens [RabbitMQ]...
+echo [2/4] A iniciar o Broker de Mensagens [RabbitMQ]...
 docker-compose -f docker-compose.broker.yml up -d --build
 echo [!] A aguardar que o RabbitMQ fique HEALTHY [pode demorar ate 60 segundos]...
 :WAIT_RABBITMQ
@@ -82,11 +82,7 @@ if /I "%STATUS%" == "healthy" (
 )
 echo.
 
-echo [3/5] A criar rede de comunicacaoo do Broker...
-docker network create urban-broker 2>NUL
-echo.
-
-echo [4/5] A iniciar Gateways...
+echo [3/4] A iniciar Gateways...
 docker-compose -f docker-compose.gateway.yml up -d --build
 :WAIT_GATEWAY
 timeout /t 3 /nobreak > NUL
@@ -100,7 +96,7 @@ if /I "%STATUS%" == "running" (
 )
 echo.
 
-echo [5/5] A iniciar Sensores...
+echo [4/4] A iniciar Sensores...
 docker-compose -f docker-compose.sensor.yml up -d --build
 echo.
 echo [SUCESSO] Toda a infraestrutura esta online!
@@ -118,7 +114,6 @@ goto MENU
 :START_BROKER
 cls
 echo A iniciar apenas o Broker de Mensagens [RabbitMQ]...
-docker network create urban-broker 2>NUL
 docker-compose -f docker-compose.broker.yml up -d --build
 echo [!] A aguardar que o RabbitMQ fique HEALTHY...
 :WAIT_BROKER

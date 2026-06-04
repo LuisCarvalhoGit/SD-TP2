@@ -10,6 +10,7 @@ using System.Threading.Tasks;
 using RabbitMQ.Client;
 using RabbitMQ.Client.Events;
 using System.Text.Json.Serialization;
+using Shared;
 
 public class SensorConfiguration
 {
@@ -106,16 +107,6 @@ class Program {
                 var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
                 _config = JsonSerializer.Deserialize<SensorConfiguration>(jsonString, options) ?? new SensorConfiguration();
 
-                GatewayIp = _config.Networking.TargetGatewayIp;
-                GatewayUdpPort = _config.Networking.TargetGatewayUdpPort;
-
-                VideoFrameIntervalMs = _config.Streaming.VideoFrameIntervalMs;
-                VideoPacketDelayMs = _config.Streaming.VideoPacketDelayMs;
-                VideoFrameCacheReloadMs = _config.Streaming.VideoFrameCacheReloadMs;
-                VideoChunkSize = _config.Streaming.VideoUDPChunkSize;
-                StreamAutoStopEnabled = _config.Streaming.StreamAutoStopEnabled;
-                StreamAutoStopAfterSeconds = _config.Streaming.StreamAutoStopAfterSeconds;
-                
                 Console.WriteLine($"[SYSTEM] Loaded config: {_config.Description}");
 
             } catch (Exception ex)
@@ -128,12 +119,22 @@ class Program {
             Console.WriteLine($"[WARNING] File {configFilePath} not found. Using default configuration.");
         }
 
+        GatewayIp = EndpointResolver.ResolveHost(_config.Networking.TargetGatewayIp);
+        GatewayUdpPort = _config.Networking.TargetGatewayUdpPort;
+
+        VideoFrameIntervalMs = _config.Streaming.VideoFrameIntervalMs;
+        VideoPacketDelayMs = _config.Streaming.VideoPacketDelayMs;
+        VideoFrameCacheReloadMs = _config.Streaming.VideoFrameCacheReloadMs;
+        VideoChunkSize = _config.Streaming.VideoUDPChunkSize;
+        StreamAutoStopEnabled = _config.Streaming.StreamAutoStopEnabled;
+        StreamAutoStopAfterSeconds = _config.Streaming.StreamAutoStopAfterSeconds;
+
         Console.WriteLine($"[SYSTEM] Starting Sensor {SID} (RabbitMQ + UDP)...");
         Console.WriteLine($"[DEBUG] Target Gateway UDP: {GatewayIp}:{GatewayUdpPort}");
 
         // Validate configuration
         if (string.IsNullOrWhiteSpace(GatewayIp)) {
-            Console.WriteLine("[ERROR] GATEWAY_IP not configured!");
+            Console.WriteLine("[ERROR] TargetGatewayIp not configured in sensor JSON!");
             Environment.Exit(1);
         }
         if (GatewayUdpPort <= 1000 || GatewayUdpPort > 65535) {
@@ -201,7 +202,7 @@ class Program {
 
     private static void InitRabbitMQ() {
         var factory = new ConnectionFactory() {
-            HostName = _config.Networking.TargetRabbitMqHost,
+            HostName = EndpointResolver.ResolveHost(_config.Networking.TargetRabbitMqHost),
             UserName = _config.Networking.RabbitMqUser,
             Password = _config.Networking.RabbitMqPassword,
             AutomaticRecoveryEnabled = true,

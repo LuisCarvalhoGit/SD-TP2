@@ -1,190 +1,142 @@
-# Configuração de Comunicação com IPs (Distributed Mode)
+# Configuracao Hibrida de Comunicacao
 
-## Como Funciona
+Este projeto usa uma configuracao hibrida:
 
-Os ficheiros de configuração usam placeholders (`$VARIABLE_NAME$`) que são substituídos automaticamente pelos valores definidos nos ficheiros `.env.distributed.sensor` e `.env.distributed.gateway`.
+- Sensores -> Gateway: via IP/host configurado no JSON, passando pela porta exposta do host.
+- Sensores/Gateways -> RabbitMQ: via IP/host configurado no JSON, passando pela porta exposta do host.
+- Gateways -> Server: via IP/host configurado no JSON, passando pelas portas expostas do host.
+- Gateway -> PreProcessing: via rede Docker, usando `http://python-preprocess:50051`.
+- Server -> Analysis: via rede Docker, usando `http://python-analysis:50052`.
 
-### Exemplo
+Ou seja, so os pares gRPC `gateway -> preprocess` e `server -> analysis` dependem de DNS/rede Docker.
 
-**sensor-config-S101.json** (com placeholders):
+## Alias `local`
+
+Nos JSONs podes usar:
+
 ```json
-{
-  "Networking": {
-    "TargetGatewayIp": "$GATEWAY_IP$",
-    "TargetRabbitMqHost": "$RABBITMQ_IP$",
-    ...
-  }
+"TargetGatewayIp": "local"
+```
+
+O codigo resolve automaticamente:
+
+- fora de Docker: `local` vira `127.0.0.1`;
+- dentro de Docker: `local` vira `host.docker.internal`.
+
+Isto permite simular tudo na mesma maquina sem trocar configs. Quando quiseres separar hosts, troca `local` pelo IP real da maquina de destino.
+
+## Onde configurar
+
+Sensores:
+
+- `SensorConfigs/sensor-config-S101.json`
+- `SensorConfigs/sensor-config-S102.json`
+
+Campos importantes:
+
+```json
+"Networking": {
+  "TargetGatewayIp": "local",
+  "TargetGatewayUdpPort": 5004,
+  "TargetRabbitMqHost": "local"
 }
 ```
 
-**.env.distributed.sensor** (valores):
-```bash
-GATEWAY_IP=127.0.0.1
-RABBITMQ_IP=127.0.0.1
-```
+Gateways:
 
-**Resultado**: Os placeholders são substituídos antes de desserializar o JSON, ficando:
+- `GatewayConfigs/gateway-config-G101.json`
+- `GatewayConfigs/gateway-config-G102.json`
+
+Campos importantes:
+
 ```json
-{
-  "Networking": {
-    "TargetGatewayIp": "127.0.0.1",
-    "TargetRabbitMqHost": "127.0.0.1",
-    ...
-  }
+"Networking": {
+  "ServerIp": "local",
+  "ServerPort": 5001,
+  "ServerUdpPort": 5003,
+  "PreprocessRpcUrl": "http://python-preprocess:50051",
+  "RabbitMqHost": "local"
 }
 ```
 
----
+Server:
 
-## Cenários de Uso
+- `ServerConfigs/server-config.json`
 
-### Cenário 1: Desenvolvimento Local (Tudo no mesmo PC)
+Campo importante:
 
-```bash
-# .env.distributed.sensor
-GATEWAY_IP=127.0.0.1
-RABBITMQ_IP=127.0.0.1
-
-# .env.distributed.gateway  
-SERVER_IP=127.0.0.1
-RABBITMQ_IP=127.0.0.1
+```json
+"AnalysisRpcUrl": "http://python-analysis:50052"
 ```
 
-Todos os serviços rodam com `docker-compose`:
-```bash
-# Terminal 1: Broker
-docker-compose -f docker-compose.broker.yml up --build
+## Cenarios
 
-# Terminal 2: Server
-docker-compose -f docker-compose.server.yml up --build
+### Tudo local em Docker
 
-# Terminal 3: Gateway
-docker-compose -f docker-compose.gateway.yml up --build
+Usa:
 
-# Terminal 4: Sensors
-docker-compose -f docker-compose.sensor.yml up --build
-```
-
----
-
-### Cenário 2: Sensors Remotos (Ex: Casa do Amigo)
-
-**Casa do Amigo (2 Sensores)**:
-- IP da máquina: `192.168.1.50`
-- Sensores S101 e S102 rodando
-
-**Minha Casa (Gateway + Broker + Server)**:
-- IP da máquina: `192.168.1.100`
-
-**Minha configuração (.env.distributed.gateway)**:
-```bash
-SERVER_IP=127.0.0.1  # Server local
-RABBITMQ_IP=127.0.0.1  # Broker local
-```
-
-**Configuração do Amigo (.env.distributed.sensor)**:
-```bash
-GATEWAY_IP=192.168.1.100  # IP do meu Gateway
-RABBITMQ_IP=192.168.1.100  # IP do meu Broker
-```
-
-**No PC do Amigo**:
-```bash
-docker-compose -f docker-compose.sensor.yml up --build
-```
-
-Os sensores conectam-se automaticamente ao Gateway e Broker no IP 192.168.1.100.
-
----
-
-### Cenário 3: Múltiplos Gateways (Diferentes Zonas)
-
-**Zona 1 (Gateway G101)**:
-```bash
-# .env.distributed.gateway
-SERVER_IP=192.168.1.100
-RABBITMQ_IP=192.168.1.100
-```
-
-**Zona 2 (Gateway G102)**:
-```bash
-# Mesmo ficheiro, mesmos valores
-SERVER_IP=192.168.1.100
-RABBITMQ_IP=192.168.1.100
-```
-
-Ambos os gateways em máquinas diferentes, mas conectando ao mesmo Broker/Server.
-
----
-
-## IPs Padrão
-
-Quando o ficheiro `.env` não tem a variável definida, usa-se `localhost`:
-
-```csharp
-// ConfigManager.cs (Gateway)
-json = json.Replace("$SERVER_IP$", Environment.GetEnvironmentVariable("SERVER_IP") ?? "localhost");
-json = json.Replace("$RABBITMQ_IP$", Environment.GetEnvironmentVariable("RABBITMQ_IP") ?? "localhost");
-```
-
----
-
-## Checklist de Configuração
-
-- [ ] Verificar IP da máquina Gateway/Broker/Server (use `ipconfig` no Windows ou `ifconfig` no Linux)
-- [ ] Editar `.env.distributed.sensor` com os IPs corretos
-- [ ] Editar `.env.distributed.gateway` com os IPs corretos
-- [ ] Testar conectividade de rede entre máquinas (ping)
-- [ ] Iniciar os containers
-- [ ] Verificar logs para ver se as connexões foram bem-sucedidas
-
----
-
-## Comandos Úteis
-
-### Ver IPs da máquina (Windows)
 ```powershell
-ipconfig
+docker compose up --build
 ```
 
-### Ver IPs da máquina (Linux)
-```bash
-ifconfig
-# ou
-hostname -I
+Ou o menu:
+
+```powershell
+.\start.bat
 ```
 
-### Testar conectividade
-```bash
-# Do container do Sensor para o Gateway
-docker exec sensor-s101 ping 192.168.1.100
+Mantem `local` nos JSONs. Os containers isolados falam entre si atraves das portas publicadas no host, exceto os dois pares gRPC autorizados.
 
-# Do container do Gateway para o Server
-docker exec gateway-g101 ping 192.168.1.100
+### Sensores num host e infraestrutura noutro
+
+Exemplo:
+
+- Host A, sensores: `192.168.1.50`
+- Host B, broker/gateways/server: `192.168.1.100`
+
+No Host A, nos `SensorConfigs/sensor-config-S*.json`:
+
+```json
+"TargetGatewayIp": "192.168.1.100",
+"TargetRabbitMqHost": "192.168.1.100"
 ```
 
-### Ver logs do container
-```bash
-docker logs -f gateway-g101
-docker logs -f sensor-s101
+No Host B, se gateway e server estiverem na mesma maquina, mantem nos `GatewayConfigs/gateway-config-G*.json`:
+
+```json
+"ServerIp": "local",
+"RabbitMqHost": "local"
 ```
 
----
+### Gateway num host e server noutro
 
-## Troubleshooting
+No JSON do gateway:
 
-### "Connection refused" ao conectar ao Gateway
-- Verificar se o Gateway está a correr
-- Verificar se o IP está correto no `.env.distributed.sensor`
-- Verificar firewall (pode estar a bloquear a porta 5004 UDP)
+```json
+"ServerIp": "192.168.1.100"
+```
 
-### "Connection refused" ao conectar ao RabbitMQ
-- Verificar se o RabbitMQ está a correr
-- Verificar se o IP está correto no `.env.distributed.sensor` e `.env.distributed.gateway`
-- RabbitMQ usa porta 5672 (AMQP) e 15672 (Web Management)
+Se o RabbitMQ tambem estiver nesse host:
 
-### "Name or service not known"
-- Não acontece mais! Agora estamos a usar IPs em vez de nomes
+```json
+"RabbitMqHost": "192.168.1.100"
+```
 
----
+## Portas
 
+- RabbitMQ AMQP: `5672`
+- RabbitMQ Web: `15672`
+- Gateway G101 UDP: `5004`
+- Gateway G102 UDP: `5005` no host, `5004` dentro do container
+- Server TCP: `5001`
+- Server UDP video: `5003`
+- Dashboard server: `8081`
+- Preview gateway G101: `8080`
+- Preview gateway G102: `8082`
+
+## Checklist rapido
+
+- Abre as portas na firewall do host que recebe ligacoes.
+- Usa `local` apenas quando o destino esta na mesma maquina fisica.
+- Usa IP real quando o destino esta noutra maquina.
+- Mantem `python-preprocess` e `python-analysis` nos URLs gRPC quando estiveres a correr esses pares por compose.

@@ -2,10 +2,11 @@
   "GatewayId": "G101",
   "Networking": {
     "UdpListenPort": 5004,
-    "ServerIp": "127.0.0.1",
+    "ServerIp": "local",
     "ServerPort": 5001,
     "ServerUdpPort": 5003,
-    "RabbitMqHost": "127.0.0.1",
+    "PreprocessRpcUrl": "http://python-preprocess:50051",
+    "RabbitMqHost": "local",
     "RabbitMq_User": "guest",
     "RabbitMq_Password": "guest"
   },

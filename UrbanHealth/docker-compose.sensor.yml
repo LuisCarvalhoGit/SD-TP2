@@ -11,6 +11,8 @@ x-sensor-base: &sensor-base
   volumes:
     - ./Sensor/Frames:/app/Frames
     - ./SensorConfigs:/app/configs # Mount the folder with every config
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   stdin_open: true
   tty: true
   restart: unless-stopped

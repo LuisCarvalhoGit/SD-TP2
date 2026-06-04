@@ -1,19 +1,17 @@
 networks:
   urban-edge:
     driver: bridge
-  # Rede externa onde o RabbitMQ está em execução
-  urban-broker:
-    external: true
 
 x-gateway-base: &gateway-base
-  build: 
+  build:
     context: .
     dockerfile: Gateway/Dockerfile
   env_file:
     - .env.distributed.gateway
   volumes:
-    # Montamos a pasta INTEIRA onde estão as configs de todos os Gateways
-    - ./GatewayConfigs:/app/Configs  
+    - ./GatewayConfigs:/app/Configs
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   depends_on:
     python-preprocess:
       condition: service_healthy
@@ -22,7 +20,6 @@ x-gateway-base: &gateway-base
     - urban-edge
 
 services:
-
   python-preprocess:
     build:
       context: ./Services
@@ -41,7 +38,7 @@ services:
       retries: 12
       start_period: 10s
     restart: unless-stopped
-    
+
   gateway-g101:
     <<: *gateway-base
     container_name: gateway-g101
@@ -50,8 +47,6 @@ services:
     ports:
       - "5004:5004/udp"
       - "8080:8080"
-    networks:
-      - urban-edge
 
   gateway-g102:
     <<: *gateway-base
@@ -59,7 +54,5 @@ services:
     environment:
       - GID=G102
     ports:
-      - "5005:5004/udp"  # Os sensores desta zona enviam para a porta física 5005
-      - "8082:8080"      # Painel web acedido via localhost:8082
-    networks:
-      - urban-edge
+      - "5005:5004/udp"
+      - "8082:8080"

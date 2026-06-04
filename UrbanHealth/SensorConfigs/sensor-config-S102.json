@@ -5,8 +5,8 @@
   "StreamAutoStopEnabled": true,
   "Networking": {
     "TargetGatewayUdpPort": 5005,
-    "TargetGatewayIp": "127.0.0.1",
-    "TargetRabbitMqHost": "127.0.0.1",
+    "TargetGatewayIp": "local",
+    "TargetRabbitMqHost": "local",
     "RabbitMq_User": "guest",
     "RabbitMq_Password": "guest"
   },

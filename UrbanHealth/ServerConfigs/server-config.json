@@ -1,0 +1,15 @@
+{
+  "Networking": {
+    "TcpPort": 5001,
+    "DashboardPort": 8081,
+    "UdpPort": 5003,
+    "AnalysisRpcUrl": "http://python-analysis:50052"
+  },
+  "Streaming": {
+    "VIDEO_FRAME_TTL_MS": 750,
+    "VIDEO_MAX_PENDING_FRAMES_PER_SENSOR": 3,
+    "VIDEO_MAX_FRAME_BYTES": 4194304,
+    "VIDEO_MAX_PARTS_PER_FRAME": 512,
+    "VIDEO_DEBUG_PACKETS": false
+  }
+}

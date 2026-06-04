@@ -1,5 +1,11 @@
 networks:
-  urban-net:
+  urban-broker:
+    driver: bridge
+  urban-edge:
+    driver: bridge
+  urban-cloud:
+    driver: bridge
+  urban-sensor:
     driver: bridge
 
 services:
@@ -19,7 +25,7 @@ services:
       start_period: 200s
     restart: unless-stopped
     networks:
-      - urban-net
+      - urban-broker
     
   python-preprocess:
     build:
@@ -31,7 +37,7 @@ services:
     ports:
       - "${PORT_PYTHON_PRE:-50051}:50051"
     networks:
-      - urban-net
+      - urban-edge
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 50051), 3); s.close()"]
       interval: 10s
@@ -50,7 +56,7 @@ services:
     ports:
       - "${PORT_PYTHON_ANALY:-50052}:50052"
     networks:
-      - urban-net
+      - urban-cloud
     healthcheck:
       test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('127.0.0.1', 50052), 3); s.close()"]
       interval: 10s
@@ -72,12 +78,13 @@ services:
       - "${PORT_SERVER_UDP:-5003}:5003/udp"
     volumes:
       - "./database_data:/app/data"
+      - "./ServerConfigs:/app/Configs"
     depends_on:
       python-analysis:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - urban-net
+      - urban-cloud
     
   csharp-gateway:
     build: 
@@ -89,8 +96,7 @@ services:
     environment:
       - GID=G101
     volumes:
-      - ./GatewayConfigs/gateway-config-G101.json:/app/Configs/gateway-config.json
-      - ./GatewayConfigs/sensors-config-G101.json:/app/Configs/sensors-config.json
+      - ./GatewayConfigs:/app/Configs
     ports:
       - "${PORT_GATEWAY_UDP:-5004}:5004/udp"
     depends_on:
@@ -101,8 +107,10 @@ services:
       csharp-server:
         condition: service_started
     restart: unless-stopped
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
-      - urban-net
+      - urban-edge
     
   csharp-sensor:
     build:
@@ -116,6 +124,8 @@ services:
     volumes:
       - ./Sensor/Frames:/app/Frames
       - ./SensorConfigs:/app/configs
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     stdin_open: true
     tty: true
     ports:
@@ -125,4 +135,4 @@ services:
         condition: service_healthy
     restart: unless-stopped
     networks:
-      - urban-net
+      - urban-sensor

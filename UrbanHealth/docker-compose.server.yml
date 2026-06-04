@@ -35,6 +35,7 @@ services:
       - "${PORT_SERVER_UDP:-5003}:5003/udp"
     volumes:
       - "./database_data:/app/data"
+      - "./ServerConfigs:/app/Configs"
     depends_on:
       python-analysis:
         condition: service_healthy

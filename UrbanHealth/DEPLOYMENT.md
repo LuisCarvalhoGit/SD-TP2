@@ -1,319 +1,127 @@
-# UrbanHealth - Deployment Guide
+# UrbanHealth Deployment
 
-## Arquitetura Separada: Broker & Gateway
+## Modelo atual
 
-A partir desta versão, o **Broker (RabbitMQ)** foi separado do **Gateway** para permitir deployments distribuídos e escaláveis.
+A infraestrutura esta preparada para correr de forma hibrida:
 
-### Estrutura de Deployment
+- tudo localmente, com Docker Compose;
+- componentes em hosts diferentes, usando IPs reais nos ficheiros JSON;
+- comunicacao local no mesmo host atraves das portas publicadas no host;
+- rede/DNS Docker apenas para `gateway -> python-preprocess` e `server -> python-analysis`.
 
-```
-┌─────────────────────────────────────────────────────────────┐
-│                     CLOUD SERVER                             │
-│  (docker-compose.server.yml)                                │
-│  ├── Python Analysis Service                                │
-│  └── C# Central Server                                      │
-└─────────────────────────────────────────────────────────────┘
-                              ▲
-                              │ (TCP/UDP)
-                              │
-┌─────────────────────────────────────────────────────────────┐
-│                  BROKER (RabbitMQ)                           │
-│  (docker-compose.broker.yml)                                │
-│  └── RabbitMQ (urban-broker network)                        │
-└─────────────────────────────────────────────────────────────┘
-            ▲                                   ▲
-            │ (AMQP)                           │ (AMQP)
-            │                                   │
-    ┌───────────────┐                    ┌───────────────┐
-    │  EDGE ZONE 1  │                    │  EDGE ZONE 2  │
-    │               │                    │               │
-    │ (docker-comp) │                    │ (docker-comp) │
-    │ .gateway.yml  │                    │ .gateway.yml  │
-    │               │                    │               │
-    │ ├─ Gateway    │                    │ ├─ Gateway    │
-    │ │  G101       │                    │ │  G102       │
-    │ └─ Preprocess │                    │ └─ Preprocess │
-    │   Service     │                    │   Service     │
-    └───────────────┘                    └───────────────┘
-            ▲                                   ▲
-            │ (UDP)                            │ (UDP)
-            │                                   │
-    ┌───────────────┐                    ┌───────────────┐
-    │ Sensors (S1) │                    │ Sensors (S2) │
-    │ (docker-comp)│                    │ (docker-comp)│
-    │ .sensor.yml  │                    │ .sensor.yml  │
-    └───────────────┘                    └───────────────┘
+Para detalhes de IPs, portas e cenarios, ver `IP_CONFIGURATION_GUIDE.md`.
+
+## Ficheiros principais
+
+| Ficheiro | Funcao |
+| --- | --- |
+| `docker-compose.yml` | Simulacao local completa |
+| `docker-compose.broker.yml` | RabbitMQ isolado |
+| `docker-compose.gateway.yml` | Gateways + PreProcessing |
+| `docker-compose.server.yml` | Server + Analysis |
+| `docker-compose.sensor.yml` | Sensores |
+| `SensorConfigs/sensor-config-S*.json` | Destino do gateway e RabbitMQ por sensor |
+| `GatewayConfigs/gateway-config-G*.json` | Destino do server, RabbitMQ e PreProcessing por gateway |
+| `ServerConfigs/server-config.json` | Portas do server e destino do Analysis |
+
+## Arranque local completo
+
+```powershell
+docker compose up --build
 ```
 
----
+Tambem podes usar:
 
-## Ficheiros de Configuração
-
-### Docker Compose Files
-
-| Ficheiro | Descrição | Rede |
-|----------|-----------|------|
-| `docker-compose.broker.yml` | RabbitMQ Central | `urban-broker` |
-| `docker-compose.gateway.yml` | Gateways + Preprocess Service | `urban-edge` |
-| `docker-compose.server.yml` | Servidor Central + Analysis | `urban-cloud` |
-| `docker-compose.sensor.yml` | Sensores IoT | `urban-sensor` |
-
-### Environment Files
-
-| Ficheiro | Propósito |
-|----------|-----------|
-| `.env.local` | LOCAL mode - todos os serviços no mesmo compose |
-| `.env.distributed.broker` | Broker (RabbitMQ) - configurações do broker |
-| `.env.distributed.gateway` | Gateway - aponta para broker externo |
-| `.env.distributed.server` | Server - análise e servidor central |
-| `.env.distributed.sensor` | Sensor - configurações dos sensores |
-
----
-
-## Como Usar
-
-### 1️⃣ Local Development (Tudo integrado)
-
-```bash
-# Ligar tudo na mesma rede
-docker-compose up --build
-
-# Parar tudo
-docker-compose down
+```powershell
+.\start.bat
 ```
 
-**Usa**: `.env.local`  
-**Para**: Testes rápidos, debug no mesmo PC
+No modo local, mantem `local` nos JSONs. Dentro de containers, `local` e resolvido para `host.docker.internal`; fora de Docker, e resolvido para `127.0.0.1`.
 
----
+## Arranque separado
 
-### 2️⃣ Distributed Mode (Separado por camadas)
+Broker:
 
-#### **Opção A: Tudo automático (recomendado)**
-
-```bash
-# Menu interativo
-start.bat
-# Escolher opção 1 para ligar tudo, ou opções individuais
+```powershell
+docker compose --env-file .env.distributed.broker -f docker-compose.broker.yml up -d --build
 ```
 
-#### **Opção B: Manual passo a passo**
+Server + Analysis:
 
-##### **Passo 1: Broker**
-```bash
-# Criar rede do broker
-docker network create urban-broker
-
-# Ligar RabbitMQ
-docker-compose -f docker-compose.broker.yml up -d --build
-
-# Verificar se está saudável
-docker-compose -f docker-compose.broker.yml logs rabbitmq
+```powershell
+docker compose --env-file .env.distributed.server -f docker-compose.server.yml up -d --build
 ```
 
-**Variáveis**: `.env.distributed.broker`
+Gateways + PreProcessing:
 
-##### **Passo 2: Cloud Server**
-```bash
-# Ligar servidor central
-docker-compose -f docker-compose.server.yml up -d --build
-
-# Verificar
-docker-compose -f docker-compose.server.yml logs csharp-server
+```powershell
+docker compose --env-file .env.distributed.gateway -f docker-compose.gateway.yml up -d --build
 ```
 
-**Variáveis**: `.env.distributed.server`
+Sensores:
 
-##### **Passo 3: Gateways (Edge)**
-```bash
-# Ligar os gateways (comunicam com RabbitMQ externo)
-docker-compose -f docker-compose.gateway.yml up -d --build
-
-# Verificar
-docker-compose -f docker-compose.gateway.yml logs gateway-g101
+```powershell
+docker compose --env-file .env.distributed.sensor -f docker-compose.sensor.yml up -d --build
 ```
 
-**Variáveis**: `.env.distributed.gateway`
+## Distribuir por hosts
 
-##### **Passo 4: Sensores**
-```bash
-# Ligar os sensores
-docker-compose -f docker-compose.sensor.yml up -d --build
+Se um destino estiver na mesma maquina fisica, usa `local` no JSON.
 
-# Verificar
-docker-compose -f docker-compose.sensor.yml logs sensor-s101
+Se estiver noutra maquina, usa o IP real dessa maquina:
+
+```json
+"TargetGatewayIp": "192.168.1.100",
+"TargetRabbitMqHost": "192.168.1.100"
 ```
 
-**Variáveis**: `.env.distributed.sensor`
+ou, no gateway:
 
----
-
-## Configuração para Deployments em Hosts Diferentes
-
-Se o **Broker** estiver em outro host (IP diferente):
-
-### 1. No Host do Broker
-```bash
-# Criar rede compartilhada
-docker network create urban-broker --driver bridge
-
-# Ligar RabbitMQ
-docker-compose -f docker-compose.broker.yml up -d --build
+```json
+"ServerIp": "192.168.1.100",
+"RabbitMqHost": "192.168.1.100"
 ```
 
-### 2. No Host dos Gateways
+Mantem estes endpoints com nomes Docker quando esses pares correm juntos por compose:
 
-Editar `.env.distributed.gateway`:
-```env
-# Mudar RABBITMQ_HOST de host.docker.internal para o IP real
-RABBITMQ_HOST=192.168.1.100    # IP do host do broker
+```json
+"PreprocessRpcUrl": "http://python-preprocess:50051"
 ```
 
-Depois ligar:
-```bash
-docker-compose -f docker-compose.gateway.yml up -d --build
+```json
+"AnalysisRpcUrl": "http://python-analysis:50052"
 ```
 
-### 3. No Host dos Sensores
+## Verificacao
 
-Editar `.env.distributed.sensor`:
-```env
-# Mudar GATEWAY_IP para apontar para o gateway correto
-GATEWAY_IP=192.168.1.101       # IP do gateway na sua zona
-RABBITMQ_HOST=192.168.1.100    # IP do broker (opcional para sensores)
+```powershell
+docker ps
+docker logs -f rabbitmq
+docker logs -f gateway-g101
+docker logs -f csharp-server
 ```
 
----
+Health RabbitMQ:
 
-## Verificações Rápidas
-
-### Status dos Contentores
-```bash
-docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}"
-```
-
-### Redes Existentes
-```bash
-docker network ls
-```
-
-### Logs em Tempo Real
-```bash
-# Todos
-docker-compose -f docker-compose.broker.yml -f docker-compose.gateway.yml \
-                -f docker-compose.server.yml -f docker-compose.sensor.yml logs -f
-
-# Específico
-docker-compose -f docker-compose.gateway.yml logs -f gateway-g101
-```
-
-### Verificar Saúde do RabbitMQ
-```bash
+```powershell
 docker exec rabbitmq rabbitmq-diagnostics check_running
-docker exec rabbitmq rabbitmq-diagnostics -q status
 ```
 
----
+Dashboard:
 
-## Troubleshooting
-
-### Problema: Gateway não conecta ao RabbitMQ
-
-**Verificar**:
-1. RabbitMQ está `healthy`?
-   ```bash
-   docker inspect --format="{{.State.Health.Status}}" rabbitmq
-   ```
-
-2. RABBITMQ_HOST está correto em `.env.distributed.gateway`?
-   ```bash
-   docker logs gateway-g101 | grep "rabbitmq"
-   ```
-
-3. Firewall permite comunicação na porta 5672?
-   ```bash
-   docker exec gateway-g101 nc -zv rabbitmq 5672
-   ```
-
-### Problema: Redes isoladas
-
-**Verificar se as redes existem**:
-```bash
-docker network ls
+```text
+http://localhost:8081
 ```
 
-**Conectar contentores a redes**:
-```bash
-# Se precisar reconectar manualmente
-docker network connect urban-broker gateway-g101
+RabbitMQ management:
+
+```text
+http://localhost:15672
 ```
 
-### Problema: Porta já em uso
+## Troubleshooting rapido
 
-```bash
-# Encontrar o processo
-netstat -ano | findstr :5672
-
-# Ou forçar kill
-docker-compose down -v  # Remove volumes também
-```
-
----
-
-## Ports por Defecto
-
-| Serviço | Porta | Protocolo |
-|---------|-------|-----------|
-| RabbitMQ AMQP | 5672 | TCP |
-| RabbitMQ Web | 15672 | HTTP |
-| Server HTTP | 5001 | TCP |
-| Server UDP | 5003 | UDP |
-| Gateway UDP | 5004 | UDP |
-| Gateway Web | 8080 | HTTP |
-| Python Preprocess | 50051 | gRPC |
-| Python Analysis | 50052 | gRPC |
-| Dashboard | 8081 | HTTP |
-
----
-
-## Exemplo Prático: 2 Zonas em Hosts Separados
-
-```
-Host A (Broker + Server)
-├─ docker-compose.broker.yml  (RabbitMQ → 192.168.1.100:5672)
-└─ docker-compose.server.yml  (Server → 192.168.1.100:5001)
-
-Host B (Gateway Zone 1)
-└─ docker-compose.gateway.yml (.env.distributed.gateway)
-    RABBITMQ_HOST=192.168.1.100
-
-Host C (Gateway Zone 2)
-└─ docker-compose.gateway.yml (.env.distributed.gateway)
-    RABBITMQ_HOST=192.168.1.100
-```
-
----
-
-## Notas Importantes
-
-✅ **Recomendações**:
-- Usar `start.bat` para deployment local/teste
-- Usar scripts Python para automação em produção
-- Manter `.env.distributed.*` versionados (com valores default)
-- Criar `.env.distributed.*.local` para valores específicos
-
-⚠️ **Cuidados**:
-- RabbitMQ demora ~200s para ficar `healthy` na primeira vez
-- Não esquecer de criar a rede `urban-broker` antes de ligar o broker
-- As redes de composição são independentes (não precisam ser roteadas)
-- Gateways em hosts diferentes precisam de IP explícito do broker
-
-🔒 **Segurança**:
-- Alterar `RABBITMQ_DEFAULT_PASS` em produção
-- Usar firewall para limitar acesso às portas
-- Configurar autenticação entre serviços
-
----
-
-**Última atualização**: 2026-05-30
-**Autor**: UrbanHealth Team
+- `Connection refused` para RabbitMQ: confirma que o host configurado em `RabbitMqHost` ou `TargetRabbitMqHost` esta correto e que a porta `5672` esta aberta.
+- Gateway nao chega ao server: confirma `ServerIp`, `ServerPort=5001` e `ServerUdpPort=5003`.
+- Sensor nao envia video: confirma `TargetGatewayIp` e `TargetGatewayUdpPort`; para G102, a porta publicada no host e `5005`.
+- Erro de DNS em `python-preprocess` ou `python-analysis`: confirma que o gateway/server esta no compose correto com o microservico Python correspondente.
