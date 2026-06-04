@@ -5,8 +5,8 @@
   "StreamAutoStopEnabled": true,
   "Networking": {
     "TargetGatewayUdpPort": 5005,
-    "TargetGatewayIp": "host.docker.internal",
-    "TargetRabbitMqIp": "host.docker.internal",
+    "TargetGatewayIp": "127.0.0.1",
+    "TargetRabbitMqHost": "127.0.0.1",
     "RabbitMq_User": "guest",
     "RabbitMq_Password": "guest"
   },

@@ -14,8 +14,6 @@ x-gateway-base: &gateway-base
   volumes:
     # Montamos a pasta INTEIRA onde estão as configs de todos os Gateways
     - ./GatewayConfigs:/app/Configs  
-  extra_hosts:
-    - "host.docker.internal:host-gateway"
   depends_on:
     python-preprocess:
       condition: service_healthy

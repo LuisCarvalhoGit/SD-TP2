@@ -2,10 +2,10 @@
   "GatewayId": "G101",
   "Networking": {
     "UdpListenPort": 5004,
-    "ServerIp": "host.docker.internal",
+    "ServerIp": "127.0.0.1",
     "ServerPort": 5001,
     "ServerUdpPort": 5003,
-    "RabbitMqHost": "host.docker.internal",
+    "RabbitMqHost": "127.0.0.1",
     "RabbitMq_User": "guest",
     "RabbitMq_Password": "guest"
   },
