@@ -121,6 +121,9 @@ http://localhost:15672
 
 ## Troubleshooting rapido
 
+- `not_authorized` na UI/curl mas `authenticate_user` OK: ver logs `Error when reading /var/lib/rabbitmq/.erlang.cookie: eacces`. Causa: `RABBITMQ_ERLANG_COOKIE` ou script init com `rabbitmqctl` a corromper permissoes. Solucao: remover cookie do `.env.distributed.broker`, `docker compose -f docker-compose.broker.yml down -v`, `up -d --build`.
+- `not_authorized` geral: volume/definitions antigos. `down -v` + rebuild; credenciais em `.env.distributed.broker`.
+- `User can only log in via localhost`: era restricao do `guest` remoto; usar `urbanhealth` ou `loopback_users = none` em `rabbitmq/rabbitmq.conf`.
 - `Connection refused` para RabbitMQ: confirma que o host configurado em `RabbitMqHost` ou `TargetRabbitMqHost` esta correto e que a porta `5672` esta aberta.
 - Gateway nao chega ao server: confirma `ServerIp`, `ServerPort=5001` e `ServerUdpPort=5003`.
 - Sensor nao envia video: confirma `TargetGatewayIp` e `TargetGatewayUdpPort`; para G102, a porta publicada no host e `5005`.

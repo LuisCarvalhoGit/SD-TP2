@@ -15,17 +15,18 @@ services:
     ports:
       - "${PORT_RABBITMQ:-5672}:5672"
       - "${PORT_RABBITMQ_WEB:-15672}:15672"
-    env_file:
-      - .env.local
+    environment:
+      RABBITMQ_DEFAULT_USER: urbanhealth
+      RABBITMQ_DEFAULT_PASS: urbanhealth
     healthcheck:
       test: ["CMD", "rabbitmq-diagnostics", "-q", "check_running"]
       interval: 10s
       timeout: 10s
       retries: 12
-      start_period: 200s
+      start_period: 60s
     restart: unless-stopped
     networks:
-      - urban-broker
+      - urban-edge
     
   python-preprocess:
     build:
