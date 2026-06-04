@@ -26,7 +26,7 @@ namespace Gateway {
         public string PreprocessRpcUrl { get; set; } = "http://local:50051";
 
         [JsonPropertyName("RabbitMqHost")]
-        public string RabbitMqHost { get; set; } = "local";
+        public string RabbitMqHost { get; set; } = "localhost";
 
         [JsonPropertyName("RabbitMq_User")]
         public string RabbitMqUser { get; set; } = "guest";

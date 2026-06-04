@@ -1,11 +1,6 @@
-# Host 2: start AFTER broker (same project + shared network)
-#   docker compose -p urbanhealth -f docker-compose.gateway.yml up -d --build
-name: urbanhealth
-
 networks:
   urban-edge:
-    external: true
-    name: urbanhealth-edge
+    driver: bridge
 
 x-gateway-base: &gateway-base
   build:
@@ -15,6 +10,8 @@ x-gateway-base: &gateway-base
     - .env.distributed.gateway
   volumes:
     - ./GatewayConfigs:/app/Configs
+  extra_hosts:
+    - "host.docker.internal:host-gateway"
   depends_on:
     python-preprocess:
       condition: service_healthy

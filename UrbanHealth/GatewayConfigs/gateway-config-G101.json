@@ -6,9 +6,9 @@
     "ServerPort": 5001,
     "ServerUdpPort": 5003,
     "PreprocessRpcUrl": "http://python-preprocess:50051",
-    "RabbitMqHost": "rabbitmq",
-    "RabbitMq_User": "urbanhealth",
-    "RabbitMq_Password": "urbanhealth"
+    "RabbitMqHost": "local",
+    "RabbitMq_User": "guest",
+    "RabbitMq_Password": "guest"
   },
   "Streaming": {
     "Video_UDP_Chunk_Size": 1200,

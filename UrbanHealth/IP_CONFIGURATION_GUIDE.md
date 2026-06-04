@@ -134,20 +134,6 @@ Se o RabbitMQ tambem estiver nesse host:
 - Preview gateway G101: `8080`
 - Preview gateway G102: `8082`
 
-## RabbitMQ remoto (credenciais)
-
-Utilizador do broker (`.env.distributed.broker` + JSONs): `urbanhealth` / `Sistemas`.
-
-**Nao uses** `management.load_definitions` com `"password"` em texto no JSON — o RabbitMQ 3.9+ ignora `RABBITMQ_DEFAULT_USER` e cria users com hash invalido; sintoma: `not_authorized` em todo o lado (UI, curl, gateways). O projeto usa imagem oficial `rabbitmq:3.13-management` e `RABBITMQ_DEFAULT_USER` em `.env.distributed.broker`. Nao uses `RABBITMQ_ERLANG_COOKIE` nem `management.load_definitions` em single-node.
-
-Recriar broker no Host 2:
-
-```powershell
-docker compose -f docker-compose.broker.yml down -v
-docker compose --env-file .env.distributed.broker -f docker-compose.broker.yml up -d --build
-.\scripts\verify-rabbitmq.bat
-```
-
 ## Checklist rapido
 
 - Abre as portas na firewall do host que recebe ligacoes.

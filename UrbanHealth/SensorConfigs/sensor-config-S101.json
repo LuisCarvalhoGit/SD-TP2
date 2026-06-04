@@ -6,8 +6,8 @@
     "TargetGatewayUdpPort": 5004,
     "TargetGatewayIp": "local",
     "TargetRabbitMqHost": "local",
-    "RabbitMq_User": "urbanhealth",
-    "RabbitMq_Password": "urbanhealth"
+    "RabbitMq_User": "guest",
+    "RabbitMq_Password": "guest"
   },
   "Streaming": {
     "Video_UDP_Chunk_Size": 1200,
