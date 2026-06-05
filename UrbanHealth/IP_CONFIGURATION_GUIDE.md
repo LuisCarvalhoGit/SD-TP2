@@ -73,14 +73,6 @@ Campo importante:
 
 ### Tudo local em Docker
 
-Usa:
-
-```powershell
-docker compose up --build
-```
-
-Ou o menu:
-
 ```powershell
 .\start.bat
 ```
