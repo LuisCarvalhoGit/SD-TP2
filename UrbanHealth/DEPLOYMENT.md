@@ -27,12 +27,6 @@ Para detalhes de IPs, portas e cenarios, ver `IP_CONFIGURATION_GUIDE.md`.
 ## Arranque local completo
 
 ```powershell
-docker compose up --build
-```
-
-Tambem podes usar:
-
-```powershell
 .\start.bat
 ```
 
